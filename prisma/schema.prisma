@@ -1,0 +1,241 @@
+// ---------------------------------------------------------------------------
+// NOVA — Phase 1 data model
+//
+// Design notes
+// ------------
+// * Everything user-owned carries a `userId` and cascades on user deletion.
+//   Every query in the app filters by `userId`; the indexes below are built
+//   around that access pattern.
+// * `Task` already carries nullable foreign keys for the Phase 2+ domain
+//   objects (project, goal, habit, meeting, event, milestone). They are plain
+//   nullable columns today so that adding the owning tables later is an
+//   additive migration (add table + add FK constraint) rather than a rewrite
+//   of the task table and every query that touches it.
+// * XP is an append-only ledger (`XpTransaction`). `UserStats.totalXp` is a
+//   cached rollup of that ledger and is only ever mutated inside the same
+//   database transaction that writes the ledger row.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Where an XP ledger entry came from. Phase 2+ will add STREAK_BONUS,
+/// HABIT_COMPLETION, GOAL_MILESTONE, FOCUS_SESSION, ACHIEVEMENT.
+enum XpSource {
+  TASK_COMPLETION
+  ADJUSTMENT
+}
+
+/// AWARD adds XP, REVERSAL takes it back when the underlying event is undone.
+/// Storing both as ledger rows keeps the running total auditable instead of
+/// destructively editing history.
+enum XpEntryKind {
+  AWARD
+  REVERSAL
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  /// scrypt hash, formatted as `scrypt$N$r$p$salt$derivedKey`.
+  passwordHash String
+  name         String
+
+  /// IANA timezone (e.g. "Europe/Berlin"). All "today"/streak logic resolves
+  /// the calendar day through this, never through the server's clock.
+  timezone String @default("UTC")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions       Session[]
+  tasks          Task[]
+  categories     Category[]
+  xpTransactions XpTransaction[]
+  stats          UserStats?
+
+  @@index([email])
+}
+
+/// Opaque server-side sessions. Phase 2 can add an `Account` table keyed by
+/// (provider, providerAccountId) for OAuth without touching this model: the
+/// session is already decoupled from the credential that created it.
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the cookie token. The raw token is never persisted, so a
+  /// database leak does not hand over live sessions.
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Task domain
+// ---------------------------------------------------------------------------
+
+model Category {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  /// Design-token name (see src/config/categories.ts). Storing a token rather
+  /// than a hex value keeps categories theme-aware.
+  color String  @default("slate")
+  icon  String?
+
+  isArchived Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+
+  @@unique([userId, name])
+  @@index([userId, isArchived])
+}
+
+model Task {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  priority    Priority @default(MEDIUM)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  /// Calendar date in the user's timezone, stored as a DATE so it never shifts
+  /// when the server and the user disagree about the current offset.
+  dueDate DateTime? @db.Date
+  /// Wall-clock "HH:mm" in the user's timezone. Kept separate from dueDate so
+  /// an all-day task and a timed task are distinguishable.
+  dueTime String?
+
+  estimatedMinutes Int?
+
+  /// Authoritative XP for this task. Written by the server from the priority
+  /// default (or an explicit, validated user override) — never trusted from
+  /// the client at completion time.
+  xpReward Int @default(20)
+
+  /// Number of times this task has transitioned false -> true. Used as the
+  /// ledger cycle key so re-completing a reopened task cannot double-award.
+  completionCount Int @default(0)
+
+  // -- Phase 2+ forward references -----------------------------------------
+  // Nullable, unconstrained today. Adding the owning table later is a purely
+  // additive migration; no column on this table has to change.
+  projectId   String?
+  goalId      String?
+  habitId     String?
+  meetingId   String?
+  eventId     String?
+  milestoneId String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  xpTransactions XpTransaction[]
+
+  @@index([userId])
+  @@index([completed])
+  @@index([dueDate])
+  @@index([userId, completed])
+  @@index([userId, dueDate])
+  // Serves the dashboard's "open tasks, soonest first" query in one scan.
+  @@index([userId, completed, dueDate])
+  @@index([userId, categoryId])
+  @@index([userId, completedAt])
+  @@index([projectId])
+  @@index([goalId])
+  @@index([habitId])
+}
+
+// ---------------------------------------------------------------------------
+// Progression
+// ---------------------------------------------------------------------------
+
+/// Append-only XP ledger. Never updated or deleted in normal operation.
+model XpTransaction {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Signed: positive for AWARD, negative for REVERSAL. Summing the column
+  /// for a user always reproduces UserStats.totalXp.
+  amount Int
+  source XpSource    @default(TASK_COMPLETION)
+  kind   XpEntryKind @default(AWARD)
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  /// Which completion cycle of the task this entry belongs to. Together with
+  /// the unique constraint below this makes double-awarding impossible at the
+  /// database level, not just in application code.
+  cycle Int @default(0)
+
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@unique([taskId, kind, cycle])
+  @@index([userId, createdAt])
+  @@index([userId, source])
+  @@index([taskId])
+}
+
+/// Cached aggregates. Always written inside the same transaction as the event
+/// that changes them, so they cannot drift from the ledger.
+model UserStats {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  totalXp Int @default(0)
+  level   Int @default(1)
+
+  currentStreak Int @default(0)
+  longestStreak Int @default(0)
+  /// "YYYY-MM-DD" as it read on the user's own calendar. Deliberately a string
+  /// rather than a timestamp: a local calendar day is not a point in time, and
+  /// storing it as one is what makes streaks break across timezones.
+  lastCompletedDate String?
+
+  tasksCompleted Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
