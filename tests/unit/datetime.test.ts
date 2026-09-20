@@ -4,6 +4,7 @@ import {
   daysBetween,
   dbDateToLocalDate,
   formatDuration,
+  formatLongDate,
   formatRelativeDay,
   formatTime,
   getGreeting,
@@ -164,9 +165,39 @@ describe("presentation", () => {
     expect(formatRelativeDay("2026-09-19", "2026-09-20")).toBe("Yesterday");
   });
 
-  it("formats distant dates without a relative label", () => {
-    expect(formatRelativeDay("2026-11-24", "2026-09-20")).not.toMatch(/Today|Tomorrow|Yesterday/);
-    expect(formatRelativeDay("2027-11-24", "2026-09-20")).toContain("2027");
+  // These assert exact strings on purpose. The labels are built from fixed
+  // tables rather than Intl precisely because Node and Chrome disagree about
+  // en-GB date patterns, and that difference surfaces as a hydration mismatch
+  // in client components. Pinning the output is what stops it coming back.
+  it("names nearby days by weekday", () => {
+    expect(formatRelativeDay("2026-09-17", "2026-09-20")).toBe("Thu 17 Sep");
+    expect(formatRelativeDay("2026-09-22", "2026-09-20")).toBe("Tue 22 Sep");
+    expect(formatRelativeDay("2026-09-25", "2026-09-20")).toBe("Fri 25 Sep");
+  });
+
+  it("drops the weekday beyond a week and the year within this year", () => {
+    expect(formatRelativeDay("2026-09-27", "2026-09-20")).toBe("27 Sep");
+    expect(formatRelativeDay("2026-11-24", "2026-09-20")).toBe("24 Nov");
+  });
+
+  it("includes the year only when it differs from today's", () => {
+    expect(formatRelativeDay("2027-10-25", "2026-09-20")).toBe("25 Oct 2027");
+    expect(formatRelativeDay("2025-01-06", "2026-09-20")).toBe("6 Jan 2025");
+  });
+
+  it("formats the long date line exactly", () => {
+    expect(formatLongDate("2026-09-20")).toBe("Sunday · 20 September");
+    expect(formatLongDate("2026-01-01")).toBe("Thursday · 1 January");
+    expect(formatLongDate("2028-02-29")).toBe("Tuesday · 29 February");
+  });
+
+  it("produces no separator characters that vary between ICU builds", () => {
+    // A comma or a narrow no-break space here is the exact shape of the
+    // Node-vs-Chrome divergence this replaced.
+    for (const date of ["2026-09-17", "2026-09-27", "2027-10-25"]) {
+      const label = formatRelativeDay(date, "2026-09-20");
+      expect(label).not.toMatch(/[,\u202f\u00a0]/);
+    }
   });
 
   it("converts 24-hour times to a readable clock", () => {

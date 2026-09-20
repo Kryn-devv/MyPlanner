@@ -152,30 +152,73 @@ function getTimezoneOffsetMs(instant: Date, timezone: string): number {
 // Presentation
 // ---------------------------------------------------------------------------
 
-/** "Today", "Tomorrow", "Yesterday", "Mon, 24 Nov" or "24 Nov 2027". */
+/**
+ * Date labels are built from these tables rather than `Intl.DateTimeFormat`.
+ *
+ * Node and Chrome ship different ICU versions, and their en-GB patterns
+ * genuinely disagree — Node renders "Thu 17 Sept" where Chrome renders
+ * "Thu, 17 Sept". These labels are rendered inside client components, so that
+ * difference shows up as a React hydration mismatch on any date two to six
+ * days away. Fixed tables make the output identical everywhere, immune to ICU
+ * drift, and exactly assertable in tests.
+ */
+const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const WEEKDAYS_LONG = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+const MONTHS_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+const MONTHS_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+interface DateParts {
+  readonly weekday: number;
+  readonly day: number;
+  readonly month: number;
+  readonly year: number;
+}
+
+/** Splits a calendar day into its parts, read in UTC so nothing shifts. */
+function partsOf(date: LocalDate): DateParts {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return {
+    weekday: parsed.getUTCDay(),
+    day: parsed.getUTCDate(),
+    month: parsed.getUTCMonth(),
+    year: parsed.getUTCFullYear(),
+  };
+}
+
+/** "Today", "Tomorrow", "Yesterday", "Thu 17 Sep", "27 Sep" or "25 Oct 2027". */
 export function formatRelativeDay(date: LocalDate, today: LocalDate): string {
   const delta = daysBetween(date, today);
   if (delta === 0) return "Today";
   if (delta === 1) return "Tomorrow";
   if (delta === -1) return "Yesterday";
 
-  const parsed = new Date(`${date}T00:00:00Z`);
-  const sameYear = date.slice(0, 4) === today.slice(0, 4);
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: Math.abs(delta) < 7 ? "short" : undefined,
-    day: "numeric",
-    month: "short",
-    year: sameYear ? undefined : "numeric",
-  }).format(parsed);
+  const { weekday, day, month, year } = partsOf(date);
+  const dayMonth = `${day} ${MONTHS_SHORT[month]}`;
+
+  // Within the week, the weekday name is the most useful anchor.
+  if (Math.abs(delta) < 7) return `${WEEKDAYS_SHORT[weekday]} ${dayMonth}`;
+  // Beyond that, only show the year when it is not the current one.
+  return year === partsOf(today).year ? dayMonth : `${dayMonth} ${year}`;
 }
 
 /** "Sunday · 20 September" — the dashboard's date line. */
 export function formatLongDate(date: LocalDate): string {
-  const parsed = new Date(`${date}T00:00:00Z`);
-  const weekday = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "long" }).format(parsed);
-  const rest = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "long" }).format(parsed);
-  return `${weekday} · ${rest}`;
+  const { weekday, day, month } = partsOf(date);
+  return `${WEEKDAYS_LONG[weekday]} · ${day} ${MONTHS_LONG[month]}`;
 }
 
 /** `"17:00"` -> `"5:00 PM"`. */
