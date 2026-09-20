@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/cn";
 import { createProjectAction, updateProjectAction } from "@/lib/projects/actions";
 import { IDLE_PROJECT_FORM_STATE, type ProjectFormState } from "@/lib/projects/form-state";
+import type { GoalOption } from "@/lib/goals/queries";
 import type { ProjectView } from "@/lib/projects/queries";
 import type { Priority } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/Button";
@@ -26,10 +27,16 @@ import { FormError } from "@/components/ui/States";
  */
 export function ProjectForm({
   project,
+  goals = [],
+  defaultGoalId,
   onSuccess,
   onCancel,
 }: {
   project?: ProjectView | null;
+  /** Selectable goals. Empty when the user has not created any yet. */
+  goals?: readonly GoalOption[];
+  /** Prefilled when creating from inside a goal. */
+  defaultGoalId?: string | null;
   onSuccess: (state: ProjectFormState) => void;
   onCancel: () => void;
 }) {
@@ -55,6 +62,9 @@ export function ProjectForm({
   const [color, setColor] = useState(project?.color ?? "violet");
   const [startDate, setStartDate] = useState(project?.startDate ?? "");
   const [dueDate, setDueDate] = useState(project?.dueDate ?? "");
+  // Controlled like every other field, so the chosen goal survives a
+  // validation error elsewhere in the form.
+  const [goalId, setGoalId] = useState(project?.goalId ?? defaultGoalId ?? "");
 
   const handledRef = useRef<ProjectFormState | null>(null);
   useEffect(() => {
@@ -95,6 +105,28 @@ export function ProjectForm({
         error={errors.description}
         rows={3}
       />
+
+      {goals.length > 0 && (
+        <SelectField
+          label="Goal"
+          name="goalId"
+          value={goalId}
+          onChange={(event) => setGoalId(event.target.value)}
+          error={errors.goalId}
+          hint="What this project is ultimately for. Optional."
+        >
+          <option value="">No goal</option>
+          {goals.map((goal) => (
+            <option key={goal.id} value={goal.id}>
+              {goal.title}
+            </option>
+          ))}
+        </SelectField>
+      )}
+
+      {/* With no goals yet there is nothing to choose, but a project created
+          from inside a goal still has to carry it through. */}
+      {goals.length === 0 && goalId && <input type="hidden" name="goalId" value={goalId} />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField

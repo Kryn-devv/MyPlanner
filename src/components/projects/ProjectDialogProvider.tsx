@@ -17,6 +17,7 @@ import {
   setProjectStatusAction,
 } from "@/lib/projects/actions";
 import type { ProjectFormState } from "@/lib/projects/form-state";
+import type { GoalOption } from "@/lib/goals/queries";
 import type { MilestoneView, ProjectSummaryView, ProjectView } from "@/lib/projects/queries";
 import type { ProjectStatus } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/Button";
@@ -33,8 +34,17 @@ import { ProjectForm } from "./ProjectForm";
  * drive the same dialog instance.
  */
 
+/** Pre-selects the goal a project is created under. */
+export interface ProjectCreateDefaults {
+  /**
+   * Set when creating from inside a goal, so the user never has to re-pick the
+   * context they are already standing in.
+   */
+  goalId?: string | null;
+}
+
 interface ProjectDialogContextValue {
-  openCreateProject: () => void;
+  openCreateProject: (defaults?: ProjectCreateDefaults) => void;
   openEditProject: (project: ProjectView) => void;
   confirmDeleteProject: (project: ProjectSummaryView | ProjectView) => void;
   setStatus: (project: ProjectView, status: ProjectStatus) => void;
@@ -57,14 +67,21 @@ export function useProjectDialogs(): ProjectDialogContextValue {
 
 type DialogState =
   | { kind: "closed" }
-  | { kind: "create-project" }
+  | { kind: "create-project"; goalId: string | null }
   | { kind: "edit-project"; project: ProjectView }
   | { kind: "delete-project"; project: ProjectSummaryView | ProjectView }
   | { kind: "create-milestone"; projectId: string }
   | { kind: "edit-milestone"; milestone: MilestoneView }
   | { kind: "delete-milestone"; milestone: MilestoneView };
 
-export function ProjectDialogProvider({ children }: { children: ReactNode }) {
+export function ProjectDialogProvider({
+  children,
+  goals = [],
+}: {
+  children: ReactNode;
+  /** Selectable goals for the project form's goal picker. */
+  goals?: readonly GoalOption[];
+}) {
   const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
   const [busy, startTransition] = useTransition();
   const { push } = useToast();
@@ -86,7 +103,11 @@ export function ProjectDialogProvider({ children }: { children: ReactNode }) {
   );
 
   // -- projects -------------------------------------------------------------
-  const openCreateProject = useCallback(() => setDialog({ kind: "create-project" }), []);
+  const openCreateProject = useCallback(
+    (defaults?: ProjectCreateDefaults) =>
+      setDialog({ kind: "create-project", goalId: defaults?.goalId ?? null }),
+    [],
+  );
   const openEditProject = useCallback(
     (project: ProjectView) => setDialog({ kind: "edit-project", project }),
     [],
@@ -215,6 +236,8 @@ export function ProjectDialogProvider({ children }: { children: ReactNode }) {
           <ProjectForm
             key={dialog.kind === "edit-project" ? dialog.project.id : "create"}
             project={dialog.kind === "edit-project" ? dialog.project : null}
+            defaultGoalId={dialog.kind === "create-project" ? dialog.goalId : null}
+            goals={goals}
             onSuccess={handleFormSuccess}
             onCancel={close}
           />

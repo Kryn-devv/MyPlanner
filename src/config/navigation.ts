@@ -87,13 +87,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     title: "Build",
     items: [
       { label: "Projects", href: "/app/projects", icon: FolderKanban, phase: 1 },
-      {
-        label: "Goals",
-        href: "/app/goals",
-        icon: Target,
-        phase: 2,
-        summary: "Outcomes worth aiming at, broken into milestones.",
-      },
+      { label: "Goals", href: "/app/goals", icon: Target, phase: 1 },
       {
         label: "Habits",
         href: "/app/habits",

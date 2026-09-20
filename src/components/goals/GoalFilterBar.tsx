@@ -3,17 +3,15 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { NO_GOAL } from "@/config/goals";
-import { PROJECT_FILTERS, PROJECT_SORTS, type ProjectSort, type ProjectStatusFilter } from "@/config/projects";
-import type { GoalOption } from "@/lib/goals/queries";
+import { GOAL_FILTERS, GOAL_SORTS, type GoalSort, type GoalStatusFilter } from "@/config/goals";
 import { cn } from "@/lib/cn";
 
 /**
- * Filter, search and sort for the project list.
+ * Filter, search and sort for the goal list.
  *
- * State lives in the URL, exactly as the task filters do, so a filtered view
- * is shareable, survives a refresh and works with the back button — and the
- * filtering itself happens in PostgreSQL rather than in the browser.
+ * State lives in the URL, exactly as the task and project filters do, so a
+ * filtered view is shareable, survives a refresh and works with the back
+ * button — and the filtering happens in PostgreSQL, not in the browser.
  */
 const SELECT_CLASS = cn(
   "h-8 cursor-pointer appearance-none rounded-[var(--radius-control)] border border-line bg-base",
@@ -23,19 +21,15 @@ const SELECT_CLASS = cn(
   "bg-[length:12px_12px] bg-[position:right_0.5rem_center] bg-no-repeat",
 );
 
-export function ProjectFilterBar({
+export function GoalFilterBar({
   status,
   sort,
   search,
-  goalId,
-  goals,
   counts,
 }: {
-  status: ProjectStatusFilter;
-  sort: ProjectSort;
+  status: GoalStatusFilter;
+  sort: GoalSort;
   search: string | null;
-  goalId: string | null;
-  goals: readonly GoalOption[];
   counts: Record<string, number>;
 }) {
   const router = useRouter();
@@ -51,7 +45,7 @@ export function ProjectFilterBar({
       else params.set(key, value);
     }
     const query = params.toString();
-    startTransition(() => router.replace(query ? `/app/projects?${query}` : "/app/projects"));
+    startTransition(() => router.replace(query ? `/app/goals?${query}` : "/app/goals"));
   };
 
   // Debounced so typing does not fire a query per keystroke.
@@ -63,17 +57,16 @@ export function ProjectFilterBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchValue]);
 
-  const hasFilters =
-    status !== "ACTIVE" || Boolean(search) || sort !== "urgency" || goalId !== null;
+  const hasFilters = status !== "ACTIVE" || Boolean(search) || sort !== "urgency";
 
   return (
     <div className="flex flex-wrap items-center gap-2" aria-busy={isPending || undefined}>
       <div
         role="radiogroup"
-        aria-label="Filter projects by status"
+        aria-label="Filter goals by status"
         className="inline-flex flex-wrap rounded-[var(--radius-control)] border border-line bg-base p-0.5"
       >
-        {PROJECT_FILTERS.map((option) => {
+        {GOAL_FILTERS.map((option) => {
           const active = status === option.value;
           const count = counts[option.value];
 
@@ -99,7 +92,7 @@ export function ProjectFilterBar({
       </div>
 
       <label className="relative">
-        <span className="sr-only">Search projects</span>
+        <span className="sr-only">Search goals</span>
         <Search
           className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint"
           aria-hidden="true"
@@ -108,43 +101,21 @@ export function ProjectFilterBar({
           type="search"
           value={searchValue}
           onChange={(event) => setSearchValue(event.target.value)}
-          placeholder="Search projects…"
+          placeholder="Search goals…"
           className="h-8 w-44 rounded-[var(--radius-control)] border border-line bg-base pl-8 pr-2.5 text-[0.8125rem] text-ink placeholder:text-ink-faint focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/25 sm:w-56"
         />
       </label>
 
-      {goals.length > 0 && (
-        <>
-          <label className="sr-only" htmlFor="filter-goal">
-            Filter by goal
-          </label>
-          <select
-            id="filter-goal"
-            value={goalId ?? ""}
-            onChange={(event) => apply({ goal: event.target.value || null })}
-            className={SELECT_CLASS}
-          >
-            <option value="">All goals</option>
-            <option value={NO_GOAL}>No goal</option>
-            {goals.map((goal) => (
-              <option key={goal.id} value={goal.id}>
-                {goal.title}
-              </option>
-            ))}
-          </select>
-        </>
-      )}
-
-      <label className="sr-only" htmlFor="project-sort">
-        Sort projects
+      <label className="sr-only" htmlFor="goal-sort">
+        Sort goals
       </label>
       <select
-        id="project-sort"
+        id="goal-sort"
         value={sort}
         onChange={(event) => apply({ sort: event.target.value === "urgency" ? null : event.target.value })}
         className={SELECT_CLASS}
       >
-        {PROJECT_SORTS.map((option) => (
+        {GOAL_SORTS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -156,7 +127,7 @@ export function ProjectFilterBar({
           type="button"
           onClick={() => {
             setSearchValue("");
-            startTransition(() => router.replace("/app/projects"));
+            startTransition(() => router.replace("/app/goals"));
           }}
           className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[0.75rem] text-ink-faint transition-colors hover:text-ink"
         >

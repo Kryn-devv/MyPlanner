@@ -1,4 +1,4 @@
-# NOVA — Phases 1–2
+# NOVA — Phases 1–3
 
 > **NOVA** is an internal working name. The brand is not hard-coded anywhere in
 > the source: set `NEXT_PUBLIC_APP_NAME` and it updates across the UI and
@@ -7,19 +7,24 @@
 A personal productivity workspace built around a hierarchy:
 
 ```
-PROJECT  →  MILESTONE  →  TASK
+GOAL  →  PROJECT  →  MILESTONE  →  TASK
 ```
 
-Tasks carry priorities, categories, deadlines and estimates, and feed an
-XP/level/streak progression system. Projects group them into work with a
-beginning and an end; milestones are the checkpoints along the way.
+Each level answers a different question. A **goal** is where you are trying to
+get. A **project** is what you are building. A **milestone** is a checkpoint
+along the way. A **task** is the thing you actually do — and the only thing
+that earns XP.
 
-**Shipped:** authentication, tasks, projects, milestones, progression.
-**Not yet:** calendar, goals, habits, focus sessions, meetings, notes,
-analytics, AI planning. Those exist as navigation placeholders, and the data
-model is shaped so they can be added without rewriting what is here — Phase 2
-proved that out, adding foreign keys to columns Phase 1 had left in place
-rather than rewriting the task table.
+Tasks carry priorities, categories, deadlines and estimates, and feed an
+XP/level/streak progression system. Every level above them is optional: a task
+needs no project, and a project needs no goal.
+
+**Shipped:** authentication, tasks, projects, milestones, goals, progression.
+**Not yet:** calendar, habits, focus sessions, meetings, notes, analytics, AI
+planning. Those exist as navigation placeholders, and the data model is shaped
+so they can be added without rewriting what is here — Phases 2 and 3 both
+proved that out, adding constraints to columns an earlier phase had left in
+place rather than rewriting the tables beneath them.
 
 ---
 
@@ -89,11 +94,12 @@ transactions, and a mocked client would verify none of them.
 `TEST_DATABASE_URL` is reset on every run, so never point it at a database
 holding real data.
 
-Two on-demand browser harnesses cover the signed-in flows end to end against a
-production build — `tests/e2e/verify.mjs` (tasks, XP, streaks, auth) and
-`tests/e2e/verify-projects.mjs` (projects, milestones, assignment). Neither is
+Three on-demand browser harnesses cover the signed-in flows end to end against
+a production build — `tests/e2e/verify.mjs` (tasks, XP, streaks, auth),
+`tests/e2e/verify-projects.mjs` (projects, milestones, assignment) and
+`tests/e2e/verify-goals.mjs` (goals, project connection, progress). None is
 part of `npm test`, and Playwright is not a project dependency; see the header
-of either file to run them.
+of any of them to run it.
 
 ## Architecture
 
@@ -101,23 +107,25 @@ of either file to run them.
 src/
   app/                      routes (App Router)
     (auth)/                 login, signup — redirects away if already signed in
-    app/                    protected shell: dashboard, tasks, settings
-                            + 12 Phase 2 placeholder routes
+    app/                    protected shell: dashboard, tasks, projects,
+                            goals, settings + 10 placeholder routes
   components/
     ui/                     Button, Field, Modal, ProgressBar, Toast, States
     layout/                 Sidebar, Topbar, MobileNav, PageHeader, ComingSoon
-    dashboard/              StatCard, panels, daily progress, active projects
+    dashboard/              StatCard, panels, daily progress, projects, goals
     tasks/                  TaskCard, TaskList, TaskForm, badges, dialogs
     projects/               ProjectCard, ProjectHeader, MilestoneList, forms
+    goals/                  GoalCard, GoalHeader, GoalStats, project section
     xp/  streaks/  auth/  settings/
   lib/
     auth/                   password (scrypt), sessions, guards, actions
     tasks/                  service (writes), queries (reads), actions
     projects/               service, queries, actions, progress
+    goals/                  service, queries, actions, progress
     validation/             hand-rolled, shared by client and server
     leveling.ts  streak.ts  xp.ts  datetime.ts  prisma.ts
   config/                   app name, priorities, categories, colours,
-                            projects, navigation
+                            projects, goals, navigation
 ```
 
 ### Decisions worth knowing
@@ -144,11 +152,19 @@ another timezone never mutates them.
 **The dashboard is a server component.** All of its data is fetched in one
 parallel batch; only the interactive pieces ship JavaScript.
 
-**Deleting a container never destroys its contents.** `Task.projectId` and
-`Task.milestoneId` are both `ON DELETE SET NULL`. Delete a project and its
-milestones go with it, but its tasks survive — detached, with their XP history
-intact. Delete a milestone and its tasks stay in the project. This is expressed
-in the schema, not in application code, so no future code path can forget it.
+**Deleting a container never destroys its contents.** `Project.goalId`,
+`Task.projectId` and `Task.milestoneId` are all `ON DELETE SET NULL`. Delete a
+goal and its projects are released, keeping their milestones, tasks and XP.
+Delete a project and its milestones go with it, but its tasks survive —
+detached, with their XP history intact. Delete a milestone and its tasks stay
+in the project. This is expressed in the schema, not in application code, so no
+future code path can forget it.
+
+**A task's goal is its project's goal — there is no `Task.goalId`.** Phase 1
+left one as a forward reference and Phase 3 deliberately dropped it rather than
+wiring it up. Two paths to the same fact could disagree, with nothing able to
+adjudicate: a task claiming one goal while its project served another would
+make goal progress undefinable. One hierarchy, one path.
 
 **A milestone belongs to a project, and a task may not mix the two up.** A task
 can have a project without a milestone, but never a milestone without a
@@ -162,10 +178,28 @@ via a relation filter, which compiles to a subquery and keeps the write atomic.
 One owner column cannot then drift out of step with another.
 
 **Progress is derived; status is explicit.** Percentages always come from
-counting tasks, via grouped aggregate queries — so a project list costs the
-same whether you have ten tasks or ten thousand, and a stored percentage can
-never go stale. Completion, by contrast, is never inferred: when every task is
-done the UI *offers* to complete the project or milestone, and waits.
+counting tasks, via grouped aggregate queries — so a list costs the same
+whether you have ten tasks or ten thousand, and a stored percentage can never
+go stale. Completion, by contrast, is never inferred: when every task is done
+the UI *offers* to complete the milestone, project or goal, and waits.
+
+**Goal progress pools tasks; it does not average projects.** Averaging the
+percentages of a 10-task project and a 20-task project treats them as equal
+contributors, so finishing something trivial could move a goal further than
+finishing something hard:
+
+```
+Project A  8/10 tasks        Project B  2/20 tasks
+pooled  -> 10/30 = 33%       averaged -> (80% + 10%) / 2 = 45%
+```
+
+Pooling counts the work that actually exists, and is the version a person can
+check by hand.
+
+**Status never cascades.** Archiving a goal leaves its projects exactly as they
+were — shelving an objective is not a decision about the work already under
+way, and silently rewriting a week of someone's plans to tidy up an
+organisational layer would be indefensible.
 
 ## Data model
 
@@ -173,22 +207,34 @@ done the UI *offers* to complete the project or milestone, and waits.
 |---|---|
 | `User` / `Session` | Accounts and opaque server-side sessions |
 | `Category` | User-defined task grouping |
-| `Project` | Work with a beginning and an end — status, priority, dates |
+| `Goal` | A strategic objective — status, priority, start and target dates |
+| `Project` | Work with a beginning and an end; optionally serves a goal |
 | `Milestone` | An ordered checkpoint within a project |
 | `Task` | The unit of work; optionally filed under a project and milestone |
 | `XpTransaction` | Append-only XP ledger |
 | `UserStats` | Cached rollup of the ledger, plus streak state |
 
-Migrations live in `prisma/migrations` and are additive — the Phase 2 migration
-adds two tables and two foreign keys without dropping or rewriting anything.
+Migrations live in `prisma/migrations`. Each phase adds tables and constraints
+rather than rewriting what came before; the one removal in the set is Phase 3
+dropping the unused `Task.goalId` column, which was verified NULL in every row
+and referenced by no code before it went.
+
+Routes: `/app` · `/app/tasks` · `/app/projects` · `/app/projects/[projectId]` ·
+`/app/goals` · `/app/goals/[goalId]` · `/app/settings`, plus `/login`,
+`/signup` and ten placeholder routes for features not yet built.
 
 ## Future readiness
 
-`Task` still carries nullable `goalId`, `habitId`, `meetingId` and `eventId`
-columns for the features that do not exist yet. That pattern is what made
-Phase 2 cheap: `projectId` and `milestoneId` were already there, so adding
-projects meant adding constraints to existing columns rather than rewriting the
-task table and every query that touches it.
+`Task` still carries nullable `habitId`, `meetingId` and `eventId` columns for
+the features that do not exist yet. That pattern is what made Phases 2 and 3
+cheap: the columns those phases needed were already there, so shipping them
+meant adding constraints rather than rewriting tables and every query that
+touches them.
+
+A forward reference is a bet, not a promise. Phase 3 called one of them —
+`Task.goalId` — and removed it, because the hierarchy it implied would have
+been a second source of truth. The remaining three are still genuinely
+undecided.
 
 `XpSource` is likewise open for extension, and `src/config/navigation.ts`
 drives the sidebar and the placeholder pages from one list — shipping a feature
@@ -207,6 +253,10 @@ is a matter of flipping its `phase` and replacing one page body.
 - Milestone ordering is stored (`position`) and respected everywhere, but there
   is no drag-to-reorder UI yet; the `reorderMilestones` service and action are
   in place for one.
+- Goals have no ordering of their own — they sort by target date, name,
+  priority or recency, but cannot be arranged by hand.
+- The goal detail page summarises task counts but does not list individual
+  tasks; those live on the project pages it links to.
 - Email is not verifiable or changeable, and there is no password reset or
   login rate limiting.
 - Daily statistics are derived rather than snapshotted, so they are always

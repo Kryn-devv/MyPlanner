@@ -453,6 +453,9 @@ export interface ProjectOption {
   readonly name: string;
   readonly color: string;
   readonly status: ProjectStatus;
+  readonly goalId: string | null;
+  /** The goal it currently serves, so a picker can say so before moving it. */
+  readonly goalTitle: string | null;
   readonly milestones: readonly { id: string; title: string }[];
 }
 
@@ -471,6 +474,8 @@ export async function getProjectOptions(userId: string): Promise<ProjectOption[]
       name: true,
       color: true,
       status: true,
+      goalId: true,
+      goal: { select: { title: true } },
       milestones: {
         select: { id: true, title: true },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -479,7 +484,15 @@ export async function getProjectOptions(userId: string): Promise<ProjectOption[]
     orderBy: [{ status: "asc" }, { name: "asc" }],
   });
 
-  return rows;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    status: row.status,
+    goalId: row.goalId,
+    goalTitle: row.goal?.title ?? null,
+    milestones: row.milestones,
+  }));
 }
 
 /** A small set of live projects for the dashboard panel. */

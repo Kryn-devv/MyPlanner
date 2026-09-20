@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { AlertTriangle, CalendarRange, CheckCircle2, ListTodo, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth/guard";
 import { getGreeting } from "@/lib/datetime";
+import { getActiveGoalsForDashboard, getGoalStatusCounts } from "@/lib/goals/queries";
 import { getActiveProjectsForDashboard, getProjectStatusCounts } from "@/lib/projects/queries";
 import { getDashboardData } from "@/lib/tasks/queries";
+import { ActiveGoalsPanel } from "@/components/dashboard/ActiveGoalsPanel";
 import { ActiveProjectsPanel } from "@/components/dashboard/ActiveProjectsPanel";
 import { DailyProgressCard } from "@/components/dashboard/DailyProgressCard";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
@@ -30,10 +32,12 @@ export default async function DashboardPage() {
 
   // Fetched alongside the dashboard's own batch rather than after it: projects
   // are an extra panel, not an extra waterfall.
-  const [data, activeProjects, projectCounts] = await Promise.all([
+  const [data, activeProjects, projectCounts, activeGoals, goalCounts] = await Promise.all([
     getDashboardData(user.id, user.timezone),
     getActiveProjectsForDashboard(user.id, user.timezone, 3),
     getProjectStatusCounts(user.id),
+    getActiveGoalsForDashboard(user.id, user.timezone, 3),
+    getGoalStatusCounts(user.id),
   ]);
 
   const greeting = getGreeting(user.timezone);
@@ -114,6 +118,8 @@ export default async function DashboardPage() {
           />
 
           <DeadlinesPanel deadlines={data.deadlines} today={data.today} />
+
+          <ActiveGoalsPanel goals={activeGoals} totalActive={goalCounts.ACTIVE} />
 
           <StatCard
             label="Open work"

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { PROJECT_FILTERS, PROJECT_SORTS, type ProjectSort, type ProjectStatusFilter } from "@/config/projects";
 import { requireUser } from "@/lib/auth/guard";
 import { getLocalToday } from "@/lib/datetime";
+import { NO_GOAL } from "@/config/goals";
+import { getGoalOptions } from "@/lib/goals/queries";
 import { getProjects, getProjectStatusCounts } from "@/lib/projects/queries";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { NewProjectButton } from "@/components/projects/NewProjectButton";
@@ -45,13 +47,25 @@ export default async function ProjectsPage({
   const sort = parseSort(single("sort"));
   const search = single("q")?.trim() || null;
 
+  const goals = await getGoalOptions(user.id);
+
+  // Same treatment as every other id filter: one that is not the caller's is
+  // silently dropped rather than queried, so the filter simply does not apply.
+  const requestedGoal = single("goal") ?? null;
+  const goalId =
+    requestedGoal === NO_GOAL
+      ? NO_GOAL
+      : requestedGoal && goals.some((g) => g.id === requestedGoal)
+        ? requestedGoal
+        : null;
+
   const [projects, counts] = await Promise.all([
-    getProjects(user.id, user.timezone, { status, search, sort }),
+    getProjects(user.id, user.timezone, { status, search, sort, goalId }),
     getProjectStatusCounts(user.id),
   ]);
 
   const today = getLocalToday(user.timezone);
-  const isFiltered = status !== "ACTIVE" || Boolean(search);
+  const isFiltered = status !== "ACTIVE" || Boolean(search) || goalId !== null;
 
   return (
     <div className="space-y-6">
@@ -67,7 +81,14 @@ export default async function ProjectsPage({
         actions={<NewProjectButton withShortcut />}
       />
 
-      <ProjectFilterBar status={status} sort={sort} search={search} counts={counts} />
+      <ProjectFilterBar
+        status={status}
+        sort={sort}
+        search={search}
+        goalId={goalId}
+        goals={goals}
+        counts={counts}
+      />
 
       <ProjectList projects={projects} today={today} isFiltered={isFiltered} />
     </div>

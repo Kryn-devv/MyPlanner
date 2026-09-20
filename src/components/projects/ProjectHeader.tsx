@@ -8,6 +8,7 @@ import { suggestsCompletion } from "@/lib/projects/progress";
 import type { ProjectSummaryView } from "@/lib/projects/queries";
 import { Button } from "@/components/ui/Button";
 import { PriorityBadge } from "@/components/tasks/PriorityBadge";
+import { GoalChip } from "@/components/goals/GoalBadges";
 import { ProjectMark, ProjectStatusBadge } from "./ProjectBadges";
 import { useProjectDialogs } from "./ProjectDialogProvider";
 
@@ -46,6 +47,16 @@ export function ProjectHeader({
           <ProjectMark color={project.color} size="lg" className="mt-0.5" />
 
           <div className="min-w-0">
+            {/* Compact, above the title: context, not a demotion. The project
+                remains its own object. */}
+            {project.goal ? (
+              <div className="mb-1.5">
+                <GoalChip goalId={project.goal.id} title={project.goal.title} />
+              </div>
+            ) : (
+              <p className="eyebrow mb-1.5">No goal</p>
+            )}
+
             <h1 className="text-xl font-semibold tracking-tight text-ink sm:text-2xl">
               {project.name}
             </h1>

@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useEffect } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
+import { useGoalDialogs } from "@/components/goals/GoalDialogProvider";
 import { useProjectDialogs } from "@/components/projects/ProjectDialogProvider";
 import { useTaskDialogs } from "./TaskDialogProvider";
 
@@ -11,22 +12,24 @@ import { useTaskDialogs } from "./TaskDialogProvider";
  * The global create action.
  *
  * Deliberately a single button that creates a *task*, not a menu. Creating a
- * task is by far the most common thing anyone does here, and putting a
- * two-item menu in front of it would add a click to the hot path to save one
- * on a rare path. Projects are created from the Projects page, and from the
- * "P" shortcut registered below, which works anywhere in the app.
+ * task is by far the most common thing anyone does here, and putting a menu in
+ * front of it would add a click to the hot path to save one on a rare path.
+ * Phase 2 already caught that regression once; this keeps the one-click
+ * behaviour as goals arrive.
  *
- * If a future phase makes several creation types equally common, this becomes
- * a split button — the shortcut wiring here already anticipates that.
+ * The rarer creations get keyboard shortcuts instead, registered here because
+ * the header is mounted on every page: N for a task, P for a project, G for a
+ * goal. Each is also reachable from its own page's button.
  */
 export function QuickAddButton({ className }: { className?: string }) {
   const { openCreate } = useTaskDialogs();
   const { openCreateProject } = useProjectDialogs();
+  const { openCreateGoal } = useGoalDialogs();
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (key !== "n" && key !== "p") return;
+      if (key !== "n" && key !== "p" && key !== "g") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const target = event.target as HTMLElement | null;
@@ -39,12 +42,13 @@ export function QuickAddButton({ className }: { className?: string }) {
 
       event.preventDefault();
       if (key === "n") openCreate();
-      else openCreateProject();
+      else if (key === "p") openCreateProject();
+      else openCreateGoal();
     };
 
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [openCreate, openCreateProject]);
+  }, [openCreate, openCreateProject, openCreateGoal]);
 
   return (
     <Button

@@ -5,56 +5,38 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   Archive,
   ArchiveRestore,
-  CalendarClock,
   CheckCircle2,
-  Flag,
+  FolderKanban,
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Target,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
-import { formatRelativeDay, type LocalDate } from "@/lib/datetime";
-import type { ProjectSummaryView } from "@/lib/projects/queries";
-import { suggestsCompletion } from "@/lib/projects/progress";
+import { suggestsGoalCompletion } from "@/lib/goals/progress";
+import type { GoalSummaryView } from "@/lib/goals/queries";
+import type { GoalStatus } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/Button";
 import { PriorityBadge } from "@/components/tasks/PriorityBadge";
-import { ProjectMark, ProjectStatusBadge } from "./ProjectBadges";
-import { ProjectProgress } from "./ProjectProgress";
-import { useProjectDialogs } from "./ProjectDialogProvider";
+import { GoalStatusBadge, GoalTargetBadge } from "./GoalBadges";
+import { GoalProgress } from "./GoalProgress";
+import { useGoalDialogs } from "./GoalDialogProvider";
 
 /**
- * A project in the list.
+ * A goal in the list.
  *
- * The whole card is a link to the detail page; the overflow menu sits above it
- * and stops propagation, so the common action (open it) needs no aiming while
- * the rarer ones stay one click away. Progressive disclosure keeps the card
- * readable — status, progress and deadline are always visible, everything else
- * is in the menu.
+ * Reads as a strategic objective rather than another task row: the title
+ * carries more weight, the target date is stated in plain words ("27 days
+ * remaining"), and the numbers underneath are about accumulated work rather
+ * than a single item. The whole card links to the detail page; the overflow
+ * menu sits above it and stops propagation.
  */
-export function ProjectCard({
-  project,
-  today,
-  footer,
-  className,
-}: {
-  project: ProjectSummaryView;
-  today: LocalDate;
-  /**
-   * Optional row beneath the card body, inside the same list item.
-   *
-   * Exists so callers can attach an action that belongs to the *context*
-   * rather than to the project — the goal page's "remove from goal", for
-   * instance. A sibling element next to the card would be invalid markup,
-   * since this component is the `<li>`.
-   */
-  footer?: ReactNode;
-  className?: string;
-}) {
+export function GoalCard({ goal, className }: { goal: GoalSummaryView; className?: string }) {
   const reduceMotion = useReducedMotion();
-  const { openEditProject, confirmDeleteProject, setStatus } = useProjectDialogs();
-  const canSuggestCompletion = suggestsCompletion(project.progress, project.status);
+  const { openEditGoal, confirmDeleteGoal, setStatus } = useGoalDialogs();
+  const canSuggestCompletion = suggestsGoalCompletion(goal.progress, goal.status);
 
   return (
     <motion.li
@@ -62,100 +44,83 @@ export function ProjectCard({
       transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         "panel group relative overflow-hidden transition-colors duration-200 hover:border-line-strong",
-        project.status === "ARCHIVED" && "opacity-65",
+        goal.status === "ARCHIVED" && "opacity-65",
         className,
       )}
     >
       <Link
-        href={`/app/projects/${project.id}`}
+        href={`/app/goals/${goal.id}`}
         className="block p-4 focus-visible:outline-none"
-        aria-label={`Open ${project.name}`}
+        aria-label={`Open ${goal.title}`}
       >
         <div className="flex items-start gap-3">
-          <ProjectMark color={project.color} />
+          <span
+            aria-hidden="true"
+            className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-accent/20 bg-accent/10"
+          >
+            <Target className="h-3.5 w-3.5 text-accent-strong" />
+          </span>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="truncate text-[0.9375rem] font-medium leading-snug text-ink">
-                {project.name}
-              </h3>
+              <h3 className="text-[0.9375rem] font-medium leading-snug text-ink">{goal.title}</h3>
               {/* Spacer so the title never runs under the menu button. */}
               <span aria-hidden="true" className="h-7 w-7 shrink-0" />
             </div>
 
-            {project.description && (
+            {goal.description && (
               <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-relaxed text-ink-faint">
-                {project.description}
+                {goal.description}
               </p>
             )}
 
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              <ProjectStatusBadge status={project.status} />
-              <PriorityBadge priority={project.priority} />
+              <GoalStatusBadge status={goal.status} />
+              <PriorityBadge priority={goal.priority} />
+              <GoalTargetBadge timing={goal.timing} />
 
-              {project.dueDate && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
-                    project.isOverdue
-                      ? "border-critical/30 bg-critical/10 text-critical"
-                      : "border-line bg-white/[0.02] text-ink-muted",
-                  )}
-                >
-                  <CalendarClock className="h-2.5 w-2.5" aria-hidden="true" />
-                  <span className="sr-only">{project.isOverdue ? "Overdue, due " : "Due "}</span>
-                  {formatRelativeDay(project.dueDate, today)}
-                  {project.isOverdue && <span className="sr-only"> (overdue)</span>}
-                </span>
-              )}
-
-              {project.milestoneCount > 0 && (
+              {goal.progress.projectCount > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white/[0.02] px-2 py-0.5 text-[0.6875rem] font-medium text-ink-muted">
-                  <Flag className="h-2.5 w-2.5" aria-hidden="true" />
-                  <span className="tnum">
-                    {project.completedMilestoneCount}/{project.milestoneCount}
-                  </span>
-                  <span className="sr-only"> milestones complete</span>
-                  <span aria-hidden="true">milestones</span>
+                  <FolderKanban className="h-2.5 w-2.5" aria-hidden="true" />
+                  <span className="tnum">{goal.progress.projectCount}</span>
+                  {goal.progress.projectCount === 1 ? "project" : "projects"}
                 </span>
               )}
             </div>
 
-            <ProjectProgress
-              progress={project.progress}
-              label={`${project.name} progress`}
+            <GoalProgress
+              progress={goal.progress}
+              label={`${goal.title} progress`}
               className="mt-3.5"
             />
 
             {canSuggestCompletion && (
               <p className="mt-2.5 inline-flex items-center gap-1.5 text-[0.75rem] text-positive">
                 <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                All tasks complete
+                All connected work is complete
               </p>
             )}
           </div>
         </div>
       </Link>
 
-      <ProjectMenu project={project} onEdit={openEditProject} onDelete={confirmDeleteProject} onStatus={setStatus} />
-
-      {footer && <div className="border-t border-line px-3 py-2">{footer}</div>}
+      <GoalMenu goal={goal} onEdit={openEditGoal} onDelete={confirmDeleteGoal} onStatus={setStatus} />
     </motion.li>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function ProjectMenu({
-  project,
+function GoalMenu({
+  goal,
   onEdit,
   onDelete,
   onStatus,
 }: {
-  project: ProjectSummaryView;
-  onEdit: (project: ProjectSummaryView) => void;
-  onDelete: (project: ProjectSummaryView) => void;
-  onStatus: (project: ProjectSummaryView, status: "ACTIVE" | "COMPLETED" | "ARCHIVED") => void;
+  goal: GoalSummaryView;
+  onEdit: (goal: GoalSummaryView) => void;
+  onDelete: (goal: GoalSummaryView) => void;
+  onStatus: (goal: GoalSummaryView, status: GoalStatus) => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -201,7 +166,7 @@ function ProjectMenu({
         }}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Actions for ${project.name}`}
+        aria-label={`Actions for ${goal.title}`}
         className={cn(
           "h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
           open && "opacity-100",
@@ -213,35 +178,34 @@ function ProjectMenu({
       {open && (
         <div
           role="menu"
-          aria-label={`Actions for ${project.name}`}
+          aria-label={`Actions for ${goal.title}`}
           className="panel absolute right-0 top-8 w-48 overflow-hidden bg-overlay p-1 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.8)]"
         >
-          <MenuItem icon={Pencil} label="Edit" onClick={run(() => onEdit(project))} />
+          <MenuItem icon={Pencil} label="Edit" onClick={run(() => onEdit(goal))} />
 
-          {project.status !== "COMPLETED" && (
+          {goal.status !== "COMPLETED" ? (
             <MenuItem
               icon={CheckCircle2}
-              label="Mark complete"
-              onClick={run(() => onStatus(project, "COMPLETED"))}
+              label="Mark achieved"
+              onClick={run(() => onStatus(goal, "COMPLETED"))}
             />
-          )}
-          {project.status === "COMPLETED" && (
-            <MenuItem icon={RotateCcw} label="Reopen" onClick={run(() => onStatus(project, "ACTIVE"))} />
+          ) : (
+            <MenuItem icon={RotateCcw} label="Reopen" onClick={run(() => onStatus(goal, "ACTIVE"))} />
           )}
 
-          {project.status !== "ARCHIVED" ? (
-            <MenuItem icon={Archive} label="Archive" onClick={run(() => onStatus(project, "ARCHIVED"))} />
+          {goal.status !== "ARCHIVED" ? (
+            <MenuItem icon={Archive} label="Archive" onClick={run(() => onStatus(goal, "ARCHIVED"))} />
           ) : (
             <MenuItem
               icon={ArchiveRestore}
               label="Restore"
-              onClick={run(() => onStatus(project, "ACTIVE"))}
+              onClick={run(() => onStatus(goal, "ACTIVE"))}
             />
           )}
 
           <div role="separator" className="my-1 h-px bg-line" />
 
-          <MenuItem icon={Trash2} label="Delete" destructive onClick={run(() => onDelete(project))} />
+          <MenuItem icon={Trash2} label="Delete" destructive onClick={run(() => onDelete(goal))} />
         </div>
       )}
     </div>

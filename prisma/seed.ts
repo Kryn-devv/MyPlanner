@@ -1,9 +1,13 @@
 /**
  * Development seed data.
  *
- * Creates one demo account with a realistic spread of projects, milestones and
- * tasks, a few days of completion history, and the XP/streak state that
- * follows from it.
+ * Creates one demo account with a realistic spread of goals, projects,
+ * milestones and tasks, a few days of completion history, and the XP/streak
+ * state that follows from it.
+ *
+ * The goals deliberately include an achieved one, an archived one, one with no
+ * projects and one with projects but no tasks — so every empty and terminal
+ * state in the UI can be seen without contriving data by hand.
  *
  * Deterministic: every date is relative to the run, and the streak is derived
  * from the days that actually have completions rather than hard-coded.
@@ -88,6 +92,74 @@ const CATEGORIES = [
   { name: "Projects", color: "rose" },
 ];
 
+interface SeedGoal {
+  key: string;
+  title: string;
+  description?: string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
+  startIn?: number;
+  targetIn?: number;
+}
+
+const GOALS: SeedGoal[] = [
+  {
+    key: "university",
+    title: "Get into a top engineering university",
+    description:
+      "Tests, portfolio and applications finished with room to spare before the deadline.",
+    priority: "URGENT",
+    status: "ACTIVE",
+    startIn: -40,
+    targetIn: 28,
+  },
+  {
+    key: "iris",
+    title: "Build IRIS and show it publicly",
+    description: "Take the assistant from a breadboard to something strangers can use.",
+    priority: "HIGH",
+    status: "ACTIVE",
+    startIn: -21,
+    targetIn: 24,
+  },
+  {
+    // Has projects, but none of them have tasks yet — exercises the
+    // "no task activity yet" state rather than a misleading 0%.
+    key: "fitness",
+    title: "Run a half marathon",
+    description: "Build up properly this time instead of going out too hard in week two.",
+    priority: "MEDIUM",
+    status: "ACTIVE",
+    startIn: -5,
+    targetIn: 120,
+  },
+  {
+    // No projects at all — exercises "no projects connected".
+    key: "language",
+    title: "Hold a conversation in Japanese",
+    description: "Not started yet. Here so it stops living in my head.",
+    priority: "LOW",
+    status: "ACTIVE",
+  },
+  {
+    key: "robotics-season",
+    title: "Finish the robotics season well",
+    description: "Regionals done, lessons written up.",
+    priority: "MEDIUM",
+    status: "COMPLETED",
+    startIn: -120,
+    targetIn: -30,
+  },
+  {
+    key: "side-business",
+    title: "Launch a side business",
+    description: "Shelved until after applications. Not abandoned.",
+    priority: "LOW",
+    status: "ARCHIVED",
+    startIn: -90,
+  },
+];
+
 interface SeedMilestone {
   key: string;
   title: string;
@@ -99,6 +171,8 @@ interface SeedMilestone {
 
 interface SeedProject {
   key: string;
+  /** Key into GOALS, or omitted for a project that serves no stated goal. */
+  goal?: string;
   name: string;
   description: string;
   color: string;
@@ -112,6 +186,7 @@ interface SeedProject {
 const PROJECTS: SeedProject[] = [
   {
     key: "iris",
+    goal: "iris",
     name: "IRIS AI Assistant",
     description: "Voice-driven desk assistant for the school exhibition.",
     color: "violet",
@@ -128,6 +203,7 @@ const PROJECTS: SeedProject[] = [
   },
   {
     key: "sat",
+    goal: "university",
     name: "SAT Preparation",
     description: "Structured revision through to the December sitting.",
     color: "cyan",
@@ -143,6 +219,7 @@ const PROJECTS: SeedProject[] = [
   },
   {
     key: "portfolio",
+    goal: "university",
     name: "Portfolio",
     description: "Personal site — case studies and a proper performance budget.",
     color: "emerald",
@@ -158,7 +235,37 @@ const PROJECTS: SeedProject[] = [
     ],
   },
   {
+    // Under a goal but with no tasks yet — the "no task activity" state.
+    key: "training-plan",
+    goal: "fitness",
+    name: "Training Plan",
+    description: "Twelve-week build, three runs a week.",
+    color: "teal",
+    priority: "MEDIUM",
+    status: "ACTIVE",
+    startIn: -5,
+    dueIn: 118,
+    milestones: [
+      { key: "tp-base", title: "Base miles", dueIn: 30 },
+      { key: "tp-long", title: "Long runs", dueIn: 75 },
+      { key: "tp-taper", title: "Taper", dueIn: 112 },
+    ],
+  },
+  {
+    // Deliberately serves no stated goal — plenty of work is worth doing
+    // without laddering up to one, and the UI must not imply otherwise.
+    key: "home",
+    name: "Home Admin",
+    description: "The things that pile up if nobody looks at them.",
+    color: "slate",
+    priority: "LOW",
+    status: "ACTIVE",
+    startIn: -14,
+    milestones: [],
+  },
+  {
     key: "robotics-regional",
+    goal: "robotics-season",
     name: "Robotics Regionals",
     description: "Last season's competition build. Finished and filed away.",
     color: "amber",
@@ -366,6 +473,28 @@ async function seed(): Promise<void> {
 
   const categoryId = new Map(user.categories.map((c) => [c.name, c.id]));
 
+  // -- goals ----------------------------------------------------------------
+  const goalId = new Map<string, string>();
+
+  for (const seedGoal of GOALS) {
+    const created = await prisma.goal.create({
+      data: {
+        userId: user.id,
+        title: seedGoal.title,
+        description: seedGoal.description ?? null,
+        priority: seedGoal.priority,
+        status: seedGoal.status,
+        startDate: seedGoal.startIn === undefined ? null : dateCol(seedGoal.startIn),
+        targetDate: seedGoal.targetIn === undefined ? null : dateCol(seedGoal.targetIn),
+        completedAt: seedGoal.status === "COMPLETED" ? instant(-28, 17) : null,
+        archivedAt: seedGoal.status === "ARCHIVED" ? instant(-35, 12) : null,
+        createdAt: instant(seedGoal.startIn ?? -45, 9),
+      },
+      select: { id: true },
+    });
+    goalId.set(seedGoal.key, created.id);
+  }
+
   // -- projects and their milestones ----------------------------------------
   const projectId = new Map<string, string>();
   const milestoneId = new Map<string, string>();
@@ -374,6 +503,7 @@ async function seed(): Promise<void> {
     const created = await prisma.project.create({
       data: {
         userId: user.id,
+        goalId: seedProject.goal ? (goalId.get(seedProject.goal) ?? null) : null,
         name: seedProject.name,
         description: seedProject.description,
         color: seedProject.color,
@@ -482,6 +612,7 @@ async function seed(): Promise<void> {
   console.log("Seeded the demo account.\n");
   console.log(`  Email     ${DEMO_EMAIL}`);
   console.log(`  Password  ${DEMO_PASSWORD}`);
+  console.log(`  Goals     ${GOALS.length} (${GOALS.filter((g) => g.status === "ACTIVE").length} active)`);
   console.log(`  Projects  ${PROJECTS.length} (${PROJECTS.reduce((n, p) => n + p.milestones.length, 0)} milestones)`);
   console.log(`  Tasks     ${TASKS.length} (${tasksCompleted} completed)`);
   console.log(`  XP        ${totalXp} — level ${calculateLevel(totalXp)}`);
