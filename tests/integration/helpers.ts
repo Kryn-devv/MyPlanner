@@ -57,6 +57,9 @@ export async function createTestTask(
     xpReward: number;
     dueDate: Date | null;
     categoryId: string | null;
+    completed: boolean;
+    projectId: string | null;
+    milestoneId: string | null;
   }> = {},
 ) {
   return db.task.create({
@@ -67,6 +70,11 @@ export async function createTestTask(
       xpReward: overrides.xpReward ?? 20,
       dueDate: overrides.dueDate ?? null,
       categoryId: overrides.categoryId ?? null,
+      completed: overrides.completed ?? false,
+      completedAt: overrides.completed ? new Date() : null,
+      completionCount: overrides.completed ? 1 : 0,
+      projectId: overrides.projectId ?? null,
+      milestoneId: overrides.milestoneId ?? null,
     },
   });
 }
@@ -85,4 +93,58 @@ export async function getLedgerTotal(userId: string): Promise<number> {
 
 export async function getLedgerRows(taskId: string) {
   return db.xpTransaction.findMany({ where: { taskId }, orderBy: { createdAt: "asc" } });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 fixtures
+// ---------------------------------------------------------------------------
+
+export async function createTestProject(
+  userId: string,
+  overrides: Partial<{
+    name: string;
+    status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
+    priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    dueDate: Date | null;
+    color: string;
+  }> = {},
+) {
+  return db.project.create({
+    data: {
+      userId,
+      name: overrides.name ?? "Test project",
+      status: overrides.status ?? "ACTIVE",
+      priority: overrides.priority ?? "MEDIUM",
+      dueDate: overrides.dueDate ?? null,
+      color: overrides.color ?? "violet",
+    },
+  });
+}
+
+export async function createTestMilestone(
+  projectId: string,
+  overrides: Partial<{
+    title: string;
+    status: "PENDING" | "COMPLETED";
+    dueDate: Date | null;
+    position: number;
+  }> = {},
+) {
+  return db.milestone.create({
+    data: {
+      projectId,
+      title: overrides.title ?? "Test milestone",
+      status: overrides.status ?? "PENDING",
+      dueDate: overrides.dueDate ?? null,
+      position: overrides.position ?? 0,
+    },
+  });
+}
+
+/** Reads a task's assignment straight from the database. */
+export async function getAssignment(taskId: string) {
+  return db.task.findUniqueOrThrow({
+    where: { id: taskId },
+    select: { projectId: true, milestoneId: true },
+  });
 }

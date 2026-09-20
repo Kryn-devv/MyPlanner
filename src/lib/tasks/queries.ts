@@ -30,6 +30,10 @@ export interface TaskView {
   readonly priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   readonly categoryId: string | null;
   readonly category: CategoryView | null;
+  readonly projectId: string | null;
+  readonly project: TaskProjectRef | null;
+  readonly milestoneId: string | null;
+  readonly milestone: TaskMilestoneRef | null;
   readonly dueDate: LocalDate | null;
   readonly dueTime: string | null;
   readonly estimatedMinutes: number | null;
@@ -42,6 +46,18 @@ export interface CategoryView {
   readonly id: string;
   readonly name: string;
   readonly color: string;
+}
+
+/** Just enough project identity to render a chip on a task row. */
+export interface TaskProjectRef {
+  readonly id: string;
+  readonly name: string;
+  readonly color: string;
+}
+
+export interface TaskMilestoneRef {
+  readonly id: string;
+  readonly title: string;
 }
 
 const TASK_SELECT = {
@@ -58,6 +74,12 @@ const TASK_SELECT = {
   completedAt: true,
   createdAt: true,
   category: { select: { id: true, name: true, color: true } },
+  projectId: true,
+  milestoneId: true,
+  // Selected rather than joined wholesale: a task row shows a project's name
+  // and colour, never its description or dates.
+  project: { select: { id: true, name: true, color: true } },
+  milestone: { select: { id: true, title: true } },
 } as const;
 
 type TaskRow = {
@@ -74,6 +96,10 @@ type TaskRow = {
   completedAt: Date | null;
   createdAt: Date;
   category: { id: string; name: string; color: string } | null;
+  projectId: string | null;
+  milestoneId: string | null;
+  project: { id: string; name: string; color: string } | null;
+  milestone: { id: string; title: string } | null;
 };
 
 function toTaskView(row: TaskRow): TaskView {
@@ -85,6 +111,10 @@ function toTaskView(row: TaskRow): TaskView {
     priority: row.priority,
     categoryId: row.categoryId,
     category: row.category,
+    projectId: row.projectId,
+    project: row.project,
+    milestoneId: row.milestoneId,
+    milestone: row.milestone,
     dueDate: dbDateToLocalDate(row.dueDate),
     dueTime: row.dueTime,
     estimatedMinutes: row.estimatedMinutes,
@@ -139,10 +169,23 @@ export interface TaskListFilters {
   readonly categoryId?: string | null;
   readonly priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null;
   readonly search?: string | null;
+  /** A project id, or the literal "none" for tasks filed under no project. */
+  readonly projectId?: string | null;
+  readonly milestoneId?: string | null;
 }
 
+/** Sentinel for "tasks with no project", which a null id cannot express. */
+export const NO_PROJECT = "none";
+
 export async function getTasks(userId: string, filters: TaskListFilters = {}): Promise<TaskView[]> {
-  const { status = "all", categoryId = null, priority = null, search = null } = filters;
+  const {
+    status = "all",
+    categoryId = null,
+    priority = null,
+    search = null,
+    projectId = null,
+    milestoneId = null,
+  } = filters;
 
   const rows = await prisma.task.findMany({
     where: {
@@ -151,6 +194,8 @@ export async function getTasks(userId: string, filters: TaskListFilters = {}): P
       ...(status === "completed" ? { completed: true } : {}),
       ...(categoryId ? { categoryId } : {}),
       ...(priority ? { priority } : {}),
+      ...(projectId ? (projectId === NO_PROJECT ? { projectId: null } : { projectId }) : {}),
+      ...(milestoneId ? { milestoneId } : {}),
       ...(search
         ? {
             OR: [

@@ -359,6 +359,8 @@ describe("create and update", () => {
       dueTime: "17:30",
       estimatedMinutes: 90,
       xpReward: 60,
+      projectId: null,
+      milestoneId: null,
     });
 
     const stored = await db.task.findUniqueOrThrow({ where: { id: created.id } });
@@ -388,6 +390,8 @@ describe("create and update", () => {
       dueTime: null,
       estimatedMinutes: null,
       xpReward: 10,
+      projectId: null,
+      milestoneId: null,
     });
 
     const stored = await db.task.findUniqueOrThrow({ where: { id: task.id } });

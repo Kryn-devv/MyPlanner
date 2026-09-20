@@ -2,6 +2,7 @@ import { PRIORITIES } from "@/config/priorities";
 import { isLocalDate, isValidTimeString, type LocalDate } from "@/lib/datetime";
 import { MAX_XP_REWARD, resolveXpReward } from "@/lib/xp";
 import type { Priority } from "@/generated/prisma/enums";
+import { validateAssignmentShape } from "./project";
 import { ErrorBag, invalid, readOptionalString, readString, valid, type ValidationResult } from "./result";
 
 export const MAX_TITLE_LENGTH = 200;
@@ -18,6 +19,16 @@ export interface TaskInput {
   readonly dueTime: string | null;
   readonly estimatedMinutes: number | null;
   readonly xpReward: number;
+  /**
+   * Project / milestone assignment.
+   *
+   * Only the *shape* is checked here (a milestone always needs a project).
+   * Whether these ids exist, belong to the caller, and belong to each other is
+   * settled against the database in the service layer, inside the transaction
+   * that performs the write — see `assertTaskAssignment`.
+   */
+  readonly projectId: string | null;
+  readonly milestoneId: string | null;
 }
 
 function isPriority(value: string): value is Priority {
@@ -42,6 +53,8 @@ export function validateTask(form: FormData, availableCategoryIds: readonly stri
   const dueTime = readOptionalString(form, "dueTime");
   const rawEstimate = readOptionalString(form, "estimatedMinutes");
   const rawXp = readOptionalString(form, "xpReward");
+  const projectId = readOptionalString(form, "projectId");
+  const milestoneId = readOptionalString(form, "milestoneId");
 
   // -- title ---------------------------------------------------------------
   if (!title) bag.add("title", "A title is required.");
@@ -87,6 +100,12 @@ export function validateTask(form: FormData, availableCategoryIds: readonly stri
     else xpReward = parsed;
   }
 
+  // -- project / milestone --------------------------------------------------
+  const assignment = validateAssignmentShape(projectId, milestoneId);
+  if (!assignment.ok) {
+    for (const [field, message] of Object.entries(assignment.errors)) bag.add(field, message);
+  }
+
   if (!bag.isEmpty) return invalid(bag.toObject());
 
   return valid({
@@ -94,6 +113,8 @@ export function validateTask(form: FormData, availableCategoryIds: readonly stri
     description,
     priority,
     categoryId,
+    projectId,
+    milestoneId,
     dueDate: dueDate as LocalDate | null,
     dueTime,
     estimatedMinutes,

@@ -1,16 +1,19 @@
 // ---------------------------------------------------------------------------
-// NOVA — Phase 1 data model
+// NOVA — data model (Phase 1 + Phase 2)
 //
 // Design notes
 // ------------
 // * Everything user-owned carries a `userId` and cascades on user deletion.
 //   Every query in the app filters by `userId`; the indexes below are built
 //   around that access pattern.
-// * `Task` already carries nullable foreign keys for the Phase 2+ domain
-//   objects (project, goal, habit, meeting, event, milestone). They are plain
-//   nullable columns today so that adding the owning tables later is an
-//   additive migration (add table + add FK constraint) rather than a rewrite
-//   of the task table and every query that touches it.
+// * `Task` carried nullable forward-reference columns from Phase 1. Two of
+//   them — projectId and milestoneId — are now real foreign keys; the rest
+//   (goal, habit, meeting, event) stay plain nullable columns until their
+//   tables exist. That prediction paid off: Phase 2 added constraints to
+//   existing columns rather than rewriting the task table.
+// * Ownership of a Milestone flows through its Project rather than being
+//   denormalised onto the row. One owner column cannot drift from another,
+//   and every milestone query already has to load or filter by project.
 // * XP is an append-only ledger (`XpTransaction`). `UserStats.totalXp` is a
 //   cached rollup of that ledger and is only ever mutated inside the same
 //   database transaction that writes the ledger row.
@@ -47,6 +50,25 @@ enum XpSource {
   ADJUSTMENT
 }
 
+/// Lifecycle of a piece of larger work.
+///
+/// COMPLETED and ARCHIVED are deliberately separate: "finished" and "put away"
+/// are different statements, and conflating them loses information the user
+/// cares about. Both are set explicitly — never inferred from task counts.
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+/// Milestones are intentionally binary. A milestone with its own rich status
+/// machine is a project; keeping this to two states is what stops the
+/// hierarchy collapsing into itself.
+enum MilestoneStatus {
+  PENDING
+  COMPLETED
+}
+
 /// AWARD adds XP, REVERSAL takes it back when the underlying event is undone.
 /// Storing both as ledger rows keeps the running total auditable instead of
 /// destructively editing history.
@@ -76,6 +98,7 @@ model User {
   sessions       Session[]
   tasks          Task[]
   categories     Category[]
+  projects       Project[]
   xpTransactions XpTransaction[]
   stats          UserStats?
 
@@ -127,6 +150,89 @@ model Category {
   @@index([userId, isArchived])
 }
 
+// ---------------------------------------------------------------------------
+// Project domain
+// ---------------------------------------------------------------------------
+
+/// A body of work that tasks belong to.
+///
+/// `status` is always set by an explicit user action. It is never derived from
+/// task counts — a project whose tasks all happen to be ticked is not
+/// necessarily finished, and silently deciding otherwise would take a
+/// judgement away from the person making it. Progress *is* derived (see
+/// src/lib/projects/progress.ts); status is not.
+model Project {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  name        String
+  description String?
+
+  /// Design-token name from src/config/colors.ts — the same restrained palette
+  /// categories use. A token rather than a hex value keeps the accent
+  /// theme-aware and keeps users from choosing an unreadable colour.
+  color String @default("violet")
+
+  status   ProjectStatus @default(ACTIVE)
+  priority Priority      @default(MEDIUM)
+
+  /// Calendar dates in the user's timezone, stored as DATE for the same reason
+  /// Task.dueDate is: a deadline is a day, not an instant.
+  startDate DateTime? @db.Date
+  dueDate   DateTime? @db.Date
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// Set when status becomes COMPLETED, cleared when it is reopened.
+  completedAt DateTime?
+  /// Set when status becomes ARCHIVED, cleared on restore. Kept separate from
+  /// completedAt so archiving a finished project does not erase when it was
+  /// finished.
+  archivedAt  DateTime?
+
+  milestones Milestone[]
+  tasks      Task[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, dueDate])
+  // Serves the default list: this user's active projects, soonest deadline first.
+  @@index([userId, status, dueDate])
+}
+
+/// A checkpoint within a project.
+///
+/// Has no `userId` of its own: ownership is the project's, reached through the
+/// relation. A denormalised copy would be a second source of truth that could
+/// silently disagree with the first.
+model Milestone {
+  id        String  @id @default(cuid())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+
+  title       String
+  description String?
+
+  dueDate DateTime?       @db.Date
+  status  MilestoneStatus @default(PENDING)
+
+  /// Manual ordering within a project. Sparse and rewritten on reorder, so
+  /// gaps are expected and meaningless.
+  position Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  tasks Task[]
+
+  @@index([projectId])
+  @@index([projectId, status])
+  @@index([projectId, dueDate])
+  @@index([projectId, position])
+}
+
 model Task {
   id     String @id @default(cuid())
   userId String
@@ -158,15 +264,29 @@ model Task {
   /// ledger cycle key so re-completing a reopened task cannot double-award.
   completionCount Int @default(0)
 
-  // -- Phase 2+ forward references -----------------------------------------
-  // Nullable, unconstrained today. Adding the owning table later is a purely
-  // additive migration; no column on this table has to change.
+  // -- Project hierarchy (Phase 2) ------------------------------------------
+  // `onDelete: SetNull` on both is the whole delete policy: removing a project
+  // or a milestone detaches its tasks, it never destroys them. A task is the
+  // user's record of work done — losing it because a container was tidied away
+  // would be indefensible, and Cascade here would do exactly that.
+  //
+  // A task may have a project and no milestone. It may never have a milestone
+  // without a project, or a milestone belonging to a *different* project; the
+  // database cannot express that rule, so the service layer enforces it on
+  // every write (see assertTaskAssignment in src/lib/tasks/service.ts).
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
   projectId   String?
-  goalId      String?
-  habitId     String?
-  meetingId   String?
-  eventId     String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   milestoneId String?
+
+  // -- Phase 3+ forward references -------------------------------------------
+  // Still plain nullable columns: their tables do not exist yet. Kept for the
+  // same reason projectId was kept through Phase 1 — it made this phase an
+  // additive migration instead of a rewrite.
+  goalId    String?
+  habitId   String?
+  meetingId String?
+  eventId   String?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -184,6 +304,11 @@ model Task {
   @@index([userId, categoryId])
   @@index([userId, completedAt])
   @@index([projectId])
+  @@index([milestoneId])
+  // Project detail and the task page's project filter both read
+  // "this user's tasks in this project".
+  @@index([userId, projectId])
+  @@index([userId, milestoneId])
   @@index([goalId])
   @@index([habitId])
 }

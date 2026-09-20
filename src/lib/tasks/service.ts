@@ -231,19 +231,27 @@ export async function setTaskCompletion(
 // ---------------------------------------------------------------------------
 
 export async function createTask(userId: string, input: TaskInput) {
-  return prisma.task.create({
-    data: {
-      userId,
-      title: input.title,
-      description: input.description,
-      priority: input.priority,
-      categoryId: input.categoryId,
-      dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
-      dueTime: input.dueTime,
-      estimatedMinutes: input.estimatedMinutes,
-      xpReward: input.xpReward,
-    },
-    select: { id: true },
+  return prisma.$transaction(async (tx) => {
+    // Inside the transaction, so the assignment cannot be invalidated between
+    // the check and the insert by a concurrent project deletion.
+    await assertTaskAssignment(tx, userId, input.projectId, input.milestoneId);
+
+    return tx.task.create({
+      data: {
+        userId,
+        title: input.title,
+        description: input.description,
+        priority: input.priority,
+        categoryId: input.categoryId,
+        dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
+        dueTime: input.dueTime,
+        estimatedMinutes: input.estimatedMinutes,
+        xpReward: input.xpReward,
+        projectId: input.projectId,
+        milestoneId: input.milestoneId,
+      },
+      select: { id: true },
+    });
   });
 }
 
@@ -255,21 +263,114 @@ export async function createTask(userId: string, input: TaskInput) {
  * between the check and the write.
  */
 export async function updateTask(userId: string, taskId: string, input: TaskInput) {
-  const result = await prisma.task.updateMany({
-    where: { id: taskId, userId },
-    data: {
-      title: input.title,
-      description: input.description,
-      priority: input.priority,
-      categoryId: input.categoryId,
-      dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
-      dueTime: input.dueTime,
-      estimatedMinutes: input.estimatedMinutes,
-      xpReward: input.xpReward,
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    await assertTaskAssignment(tx, userId, input.projectId, input.milestoneId);
 
-  if (result.count === 0) throw new NotFoundError("That task could not be found.");
+    const result = await tx.task.updateMany({
+      where: { id: taskId, userId },
+      data: {
+        title: input.title,
+        description: input.description,
+        priority: input.priority,
+        categoryId: input.categoryId,
+        dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
+        dueTime: input.dueTime,
+        estimatedMinutes: input.estimatedMinutes,
+        xpReward: input.xpReward,
+        projectId: input.projectId,
+        milestoneId: input.milestoneId,
+      },
+    });
+
+    if (result.count === 0) throw new NotFoundError("That task could not be found.");
+  });
+}
+
+/**
+ * Moves a task into or out of a project and/or milestone.
+ *
+ * Covers every assignment operation the UI offers — assign, unassign, move
+ * between milestones — because they are all the same write: set the pair, or
+ * set it to null. Nothing else about the task changes, and in particular
+ * nothing about XP: where a task is filed has no bearing on what completing it
+ * is worth.
+ */
+export async function setTaskAssignment(
+  userId: string,
+  taskId: string,
+  projectId: string | null,
+  milestoneId: string | null,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await assertTaskAssignment(tx, userId, projectId, milestoneId);
+
+    const result = await tx.task.updateMany({
+      where: { id: taskId, userId },
+      data: { projectId, milestoneId },
+    });
+
+    if (result.count === 0) throw new NotFoundError("That task could not be found.");
+  });
+}
+
+/**
+ * The relationship guard.
+ *
+ * Three rules, all enforced against the database rather than taken on trust
+ * from the request:
+ *
+ *   1. A milestone always needs a project.
+ *   2. The project must belong to the caller.
+ *   3. The milestone must belong to *that* project — which, given (2), also
+ *      means it belongs to the caller.
+ *
+ * Rule 3 is the one a naive implementation misses: checking that the caller
+ * owns the project and separately that the caller owns the milestone still
+ * permits filing a task under Project A with a milestone from Project B. The
+ * check here is a single query keyed on both ids, so that combination cannot
+ * pass.
+ *
+ * A foreign or non-existent id produces the same `NotFoundError` either way.
+ */
+export async function assertTaskAssignment(
+  tx: TxClient,
+  userId: string,
+  projectId: string | null,
+  milestoneId: string | null,
+): Promise<void> {
+  if (!projectId && !milestoneId) return;
+
+  if (milestoneId && !projectId) {
+    throw new InvalidAssignmentError("A milestone needs a project.");
+  }
+
+  if (projectId) {
+    const project = await tx.project.findFirst({
+      where: { id: projectId, userId },
+      select: { id: true },
+    });
+    if (!project) throw new NotFoundError("That project could not be found.");
+  }
+
+  if (milestoneId) {
+    // Keyed on both ids at once: a milestone from a different project simply
+    // does not match, no matter who owns either.
+    const milestone = await tx.milestone.findFirst({
+      where: { id: milestoneId, projectId: projectId as string, project: { userId } },
+      select: { id: true },
+    });
+    if (!milestone) {
+      throw new InvalidAssignmentError("That milestone does not belong to the chosen project.");
+    }
+  }
+}
+
+/** A structurally impossible project/milestone pairing. */
+export class InvalidAssignmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidAssignmentError";
+  }
 }
 
 /**
