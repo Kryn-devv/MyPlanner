@@ -4,7 +4,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { PRIORITIES, PRIORITY_CONFIG } from "@/config/priorities";
+import { NO_PROJECT } from "@/config/projects";
 import { cn } from "@/lib/cn";
+import type { ProjectOption } from "@/lib/projects/queries";
 import type { CategoryView, TaskStatusFilter } from "@/lib/tasks/queries";
 
 /**
@@ -17,10 +19,13 @@ import type { CategoryView, TaskStatusFilter } from "@/lib/tasks/queries";
  */
 export interface TaskFiltersProps {
   categories: readonly CategoryView[];
+  projects: readonly ProjectOption[];
   status: TaskStatusFilter;
   categoryId: string | null;
   priority: string | null;
   search: string | null;
+  projectId: string | null;
+  milestoneId: string | null;
 }
 
 /**
@@ -41,7 +46,16 @@ const STATUS_OPTIONS: readonly { value: TaskStatusFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-export function TaskFilters({ categories, status, categoryId, priority, search }: TaskFiltersProps) {
+export function TaskFilters({
+  categories,
+  projects,
+  status,
+  categoryId,
+  priority,
+  search,
+  projectId,
+  milestoneId,
+}: TaskFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -67,7 +81,19 @@ export function TaskFilters({ categories, status, categoryId, priority, search }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchValue]);
 
-  const hasFilters = status !== "open" || categoryId !== null || priority !== null || Boolean(search);
+  // Milestones only make sense once a real project is selected.
+  const milestoneOptions =
+    projectId && projectId !== NO_PROJECT
+      ? (projects.find((p) => p.id === projectId)?.milestones ?? [])
+      : [];
+
+  const hasFilters =
+    status !== "open" ||
+    categoryId !== null ||
+    priority !== null ||
+    projectId !== null ||
+    milestoneId !== null ||
+    Boolean(search);
 
   return (
     <div className="flex flex-wrap items-center gap-2" aria-busy={isPending || undefined}>
@@ -145,6 +171,49 @@ export function TaskFilters({ categories, status, categoryId, priority, search }
           </option>
         ))}
       </select>
+
+      <label className="sr-only" htmlFor="filter-project">
+        Filter by project
+      </label>
+      <select
+        id="filter-project"
+        value={projectId ?? ""}
+        onChange={(event) =>
+          // Changing project invalidates any milestone chosen under the
+          // previous one, so it is cleared in the same navigation.
+          apply({ project: event.target.value || null, milestone: null })
+        }
+        className={FILTER_SELECT_CLASS}
+      >
+        <option value="">All projects</option>
+        <option value={NO_PROJECT}>No project</option>
+        {projects.map((project) => (
+          <option key={project.id} value={project.id}>
+            {project.name}
+          </option>
+        ))}
+      </select>
+
+      {milestoneOptions.length > 0 && (
+        <>
+          <label className="sr-only" htmlFor="filter-milestone">
+            Filter by milestone
+          </label>
+          <select
+            id="filter-milestone"
+            value={milestoneId ?? ""}
+            onChange={(event) => apply({ milestone: event.target.value || null })}
+            className={FILTER_SELECT_CLASS}
+          >
+            <option value="">Any milestone</option>
+            {milestoneOptions.map((milestone) => (
+              <option key={milestone.id} value={milestone.id}>
+                {milestone.title}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
       {hasFilters && (
         <button

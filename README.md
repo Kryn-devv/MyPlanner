@@ -1,16 +1,25 @@
-# NOVA — Phase 1
+# NOVA — Phases 1–2
 
 > **NOVA** is an internal working name. The brand is not hard-coded anywhere in
 > the source: set `NEXT_PUBLIC_APP_NAME` and it updates across the UI and
 > metadata. See `src/config/app.ts`.
 
-A personal productivity workspace: tasks with priorities, categories, deadlines
-and estimates, on top of an XP/level/streak progression system.
+A personal productivity workspace built around a hierarchy:
 
-This is **Phase 1**. Calendar, projects, goals, habits, focus sessions,
-meetings, notes, analytics and AI planning are not implemented — they exist as
-navigation placeholders, and the data model is shaped so they can be added
-without rewriting the task system.
+```
+PROJECT  →  MILESTONE  →  TASK
+```
+
+Tasks carry priorities, categories, deadlines and estimates, and feed an
+XP/level/streak progression system. Projects group them into work with a
+beginning and an end; milestones are the checkpoints along the way.
+
+**Shipped:** authentication, tasks, projects, milestones, progression.
+**Not yet:** calendar, goals, habits, focus sessions, meetings, notes,
+analytics, AI planning. Those exist as navigation placeholders, and the data
+model is shaped so they can be added without rewriting what is here — Phase 2
+proved that out, adding foreign keys to columns Phase 1 had left in place
+rather than rewriting the task table.
 
 ---
 
@@ -55,7 +64,7 @@ starter set of categories.
 | `npm run dev` | Development server |
 | `npm run build` | Production build (generates the Prisma client first) |
 | `npm start` | Serve the production build |
-| `npm run typecheck` | `tsc --noEmit` |
+| `npm run typecheck` | `tsc --noEmit` (strict; also run by `build`) |
 | `npm test` | Full test suite (unit + integration) |
 | `npm run test:unit` | Pure logic only — no database needed |
 | `npm run test:integration` | Against `TEST_DATABASE_URL` |
@@ -80,9 +89,11 @@ transactions, and a mocked client would verify none of them.
 `TEST_DATABASE_URL` is reset on every run, so never point it at a database
 holding real data.
 
-There is also an on-demand browser harness at `tests/e2e/verify.mjs` covering
-the whole signed-in flow. It is not part of `npm test` and Playwright is not a
-project dependency; see the header of that file to run it.
+Two on-demand browser harnesses cover the signed-in flows end to end against a
+production build — `tests/e2e/verify.mjs` (tasks, XP, streaks, auth) and
+`tests/e2e/verify-projects.mjs` (projects, milestones, assignment). Neither is
+part of `npm test`, and Playwright is not a project dependency; see the header
+of either file to run them.
 
 ## Architecture
 
@@ -95,15 +106,18 @@ src/
   components/
     ui/                     Button, Field, Modal, ProgressBar, Toast, States
     layout/                 Sidebar, Topbar, MobileNav, PageHeader, ComingSoon
-    dashboard/              StatCard, panels, daily progress
+    dashboard/              StatCard, panels, daily progress, active projects
     tasks/                  TaskCard, TaskList, TaskForm, badges, dialogs
+    projects/               ProjectCard, ProjectHeader, MilestoneList, forms
     xp/  streaks/  auth/  settings/
   lib/
     auth/                   password (scrypt), sessions, guards, actions
     tasks/                  service (writes), queries (reads), actions
+    projects/               service, queries, actions, progress
     validation/             hand-rolled, shared by client and server
     leveling.ts  streak.ts  xp.ts  datetime.ts  prisma.ts
-  config/                   app name, priorities, categories, navigation
+  config/                   app name, priorities, categories, colours,
+                            projects, navigation
 ```
 
 ### Decisions worth knowing
@@ -130,11 +144,70 @@ another timezone never mutates them.
 **The dashboard is a server component.** All of its data is fetched in one
 parallel batch; only the interactive pieces ship JavaScript.
 
-## Phase 2+ readiness
+**Deleting a container never destroys its contents.** `Task.projectId` and
+`Task.milestoneId` are both `ON DELETE SET NULL`. Delete a project and its
+milestones go with it, but its tasks survive — detached, with their XP history
+intact. Delete a milestone and its tasks stay in the project. This is expressed
+in the schema, not in application code, so no future code path can forget it.
 
-`Task` already carries nullable `projectId`, `goalId`, `habitId`, `meetingId`,
-`eventId` and `milestoneId` columns. Adding those features is an additive
-migration — create the table, add the foreign key — with no change to the task
-table or the queries that read it. `XpSource` and the quick-add action list are
-likewise open for extension, and `src/config/navigation.ts` drives both the
-sidebar and the placeholder pages from one list.
+**A milestone belongs to a project, and a task may not mix the two up.** A task
+can have a project without a milestone, but never a milestone without a
+project, and never a milestone from a *different* project. That last case is
+the one a naive check misses — verifying "you own the project" and "you own the
+milestone" separately still admits an unrelated pair. The check is one query
+keyed on both ids, run inside the write transaction.
+
+**Milestones have no `userId`.** Ownership reaches them through their project
+via a relation filter, which compiles to a subquery and keeps the write atomic.
+One owner column cannot then drift out of step with another.
+
+**Progress is derived; status is explicit.** Percentages always come from
+counting tasks, via grouped aggregate queries — so a project list costs the
+same whether you have ten tasks or ten thousand, and a stored percentage can
+never go stale. Completion, by contrast, is never inferred: when every task is
+done the UI *offers* to complete the project or milestone, and waits.
+
+## Data model
+
+| Model | Purpose |
+|---|---|
+| `User` / `Session` | Accounts and opaque server-side sessions |
+| `Category` | User-defined task grouping |
+| `Project` | Work with a beginning and an end — status, priority, dates |
+| `Milestone` | An ordered checkpoint within a project |
+| `Task` | The unit of work; optionally filed under a project and milestone |
+| `XpTransaction` | Append-only XP ledger |
+| `UserStats` | Cached rollup of the ledger, plus streak state |
+
+Migrations live in `prisma/migrations` and are additive — the Phase 2 migration
+adds two tables and two foreign keys without dropping or rewriting anything.
+
+## Future readiness
+
+`Task` still carries nullable `goalId`, `habitId`, `meetingId` and `eventId`
+columns for the features that do not exist yet. That pattern is what made
+Phase 2 cheap: `projectId` and `milestoneId` were already there, so adding
+projects meant adding constraints to existing columns rather than rewriting the
+task table and every query that touches it.
+
+`XpSource` is likewise open for extension, and `src/config/navigation.ts`
+drives the sidebar and the placeholder pages from one list — shipping a feature
+is a matter of flipping its `phase` and replacing one page body.
+
+## Known limitations
+
+- `npm audit` reports advisories in `mysql2`, which reaches the production
+  dependency tree through `@prisma/client` → `prisma`. It is **not** bundled
+  into the build output and the app never imports a MySQL adapter — it speaks
+  PostgreSQL through `@prisma/adapter-pg` — so the vulnerable code paths (the
+  MySQL auth handshake and protocol decompression) are unreachable here.
+  `npm audit fix --force` downgrades Prisma 7 to 6, which removes the driver
+  adapter architecture this app is built on, so it has deliberately not been
+  applied.
+- Milestone ordering is stored (`position`) and respected everywhere, but there
+  is no drag-to-reorder UI yet; the `reorderMilestones` service and action are
+  in place for one.
+- Email is not verifiable or changeable, and there is no password reset or
+  login rate limiting.
+- Daily statistics are derived rather than snapshotted, so they are always
+  consistent but carry no history.

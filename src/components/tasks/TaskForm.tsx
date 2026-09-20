@@ -7,6 +7,7 @@ import { getDefaultXpForPriority, MAX_XP_REWARD } from "@/lib/xp";
 import { createTaskAction, updateTaskAction } from "@/lib/tasks/actions";
 import { IDLE_TASK_FORM_STATE, type TaskFormState } from "@/lib/tasks/form-state";
 import { MAX_ESTIMATED_MINUTES, MAX_TITLE_LENGTH } from "@/lib/validation/task";
+import type { ProjectOption } from "@/lib/projects/queries";
 import type { CategoryView, TaskView } from "@/lib/tasks/queries";
 import type { Priority } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/Button";
@@ -23,16 +24,30 @@ import { FormError } from "@/components/ui/States";
  */
 export interface TaskFormProps {
   categories: readonly CategoryView[];
+  projects: readonly ProjectOption[];
   /** Present when editing. */
   task?: TaskView | null;
   /** Prefills the due date when adding from a dated context. */
   defaultDueDate?: string | null;
+  /** Prefilled when adding from inside a project or milestone. */
+  defaultProjectId?: string | null;
+  defaultMilestoneId?: string | null;
   onSuccess: (state: TaskFormState) => void;
   onCancel: () => void;
   formId: string;
 }
 
-export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel, formId }: TaskFormProps) {
+export function TaskForm({
+  categories,
+  projects,
+  task,
+  defaultDueDate,
+  defaultProjectId,
+  defaultMilestoneId,
+  onSuccess,
+  onCancel,
+  formId,
+}: TaskFormProps) {
   const isEditing = Boolean(task);
   const action = isEditing ? updateTaskAction : createTaskAction;
   const [state, formAction, pending] = useActionState<TaskFormState, FormData>(action, IDLE_TASK_FORM_STATE);
@@ -42,8 +57,35 @@ export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel
   const [xpOverride, setXpOverride] = useState<number | null>(
     task && task.xpReward !== getDefaultXpForPriority(task.priority) ? task.xpReward : null,
   );
+  /**
+   * Every field is controlled.
+   *
+   * React resets an uncontrolled form once its action completes, so a single
+   * rejected field would otherwise wipe the whole form — losing a typed
+   * description is a real cost for a validation slip elsewhere.
+   */
   const [title, setTitle] = useState(task?.title ?? "");
+  const [description, setDescription] = useState(task?.description ?? "");
+  const [categoryId, setCategoryId] = useState(task?.categoryId ?? "");
   const [dueDate, setDueDate] = useState(task?.dueDate ?? defaultDueDate ?? "");
+  const [dueTime, setDueTime] = useState(task?.dueTime ?? "");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(
+    task?.estimatedMinutes !== null && task?.estimatedMinutes !== undefined
+      ? String(task.estimatedMinutes)
+      : "",
+  );
+
+  // Project and milestone are linked: changing the project invalidates any
+  // milestone chosen under the previous one, so the milestone is cleared.
+  // The server rejects a mismatched pair regardless — this just stops the UI
+  // ever presenting one.
+  const [projectId, setProjectId] = useState(task?.projectId ?? defaultProjectId ?? "");
+  const [milestoneId, setMilestoneId] = useState(task?.milestoneId ?? defaultMilestoneId ?? "");
+
+  const milestoneOptions = useMemo(
+    () => projects.find((p) => p.id === projectId)?.milestones ?? [],
+    [projects, projectId],
+  );
 
   const xpValue = xpOverride ?? getDefaultXpForPriority(priority);
   const errors = state.errors ?? {};
@@ -84,7 +126,8 @@ export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel
       <TextAreaField
         label="Description"
         name="description"
-        defaultValue={task?.description ?? ""}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
         placeholder="Extra context, links, acceptance criteria…"
         error={errors.description}
         rows={3}
@@ -109,7 +152,8 @@ export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel
         <SelectField
           label="Category"
           name="categoryId"
-          defaultValue={task?.categoryId ?? ""}
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
           error={errors.categoryId}
         >
           <option value="">No category</option>
@@ -122,19 +166,69 @@ export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <SelectField
+          label="Project"
+          name="projectId"
+          value={projectId}
+          onChange={(event) => {
+            setProjectId(event.target.value);
+            setMilestoneId("");
+          }}
+          error={errors.projectId}
+        >
+          <option value="">No project</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </SelectField>
+
+        <SelectField
+          label="Milestone"
+          name="milestoneId"
+          value={milestoneId}
+          onChange={(event) => setMilestoneId(event.target.value)}
+          // A milestone only means something inside a project.
+          disabled={!projectId || milestoneOptions.length === 0}
+          error={errors.milestoneId}
+          hint={
+            !projectId
+              ? "Pick a project first"
+              : milestoneOptions.length === 0
+                ? "This project has no milestones"
+                : undefined
+          }
+        >
+          <option value="">No milestone</option>
+          {milestoneOptions.map((milestone) => (
+            <option key={milestone.id} value={milestone.id}>
+              {milestone.title}
+            </option>
+          ))}
+        </SelectField>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <TextField
           label="Due date"
           name="dueDate"
           type="date"
           value={dueDate}
-          onChange={(event) => setDueDate(event.target.value)}
+          onChange={(event) => {
+            setDueDate(event.target.value);
+            // A time with no date is rejected by the validator, so clearing
+            // the date clears the time rather than leaving an invalid pair.
+            if (!event.target.value) setDueTime("");
+          }}
           error={errors.dueDate}
         />
         <TextField
           label="Due time"
           name="dueTime"
           type="time"
-          defaultValue={task?.dueTime ?? ""}
+          value={dueTime}
+          onChange={(event) => setDueTime(event.target.value)}
           error={errors.dueTime}
           // A time with no date has nothing to anchor to.
           disabled={!dueDate}
@@ -151,10 +245,13 @@ export function TaskForm({ categories, task, defaultDueDate, onSuccess, onCancel
           min={1}
           max={MAX_ESTIMATED_MINUTES}
           step={5}
-          defaultValue={task?.estimatedMinutes ?? ""}
+          value={estimatedMinutes}
+          onChange={(event) => setEstimatedMinutes(event.target.value)}
           placeholder="Minutes"
           error={errors.estimatedMinutes}
-          hint={task?.estimatedMinutes ? formatDuration(task.estimatedMinutes) : "Optional"}
+          hint={
+            Number(estimatedMinutes) > 0 ? formatDuration(Number(estimatedMinutes)) : "Optional"
+          }
         />
 
         <TextField

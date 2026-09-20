@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { ListTodo } from "lucide-react";
 import { requireUser } from "@/lib/auth/guard";
 import { PRIORITIES } from "@/config/priorities";
+import { NO_PROJECT } from "@/config/projects";
+import { getProjectOptions } from "@/lib/projects/queries";
 import { getCategories, getTasks, type TaskStatusFilter } from "@/lib/tasks/queries";
 import { getLocalToday } from "@/lib/datetime";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -45,14 +47,44 @@ export default async function TasksPage({
   const search = single("q")?.trim() || null;
   const requestedCategory = single("category") ?? null;
 
-  const categories = await getCategories(user.id);
+  const [categories, projects] = await Promise.all([
+    getCategories(user.id),
+    getProjectOptions(user.id),
+  ]);
   // Silently drop a category id that is not the caller's — the filter simply
   // does not apply rather than returning an error or somebody else's tasks.
   const categoryId = requestedCategory && categories.some((c) => c.id === requestedCategory)
     ? requestedCategory
     : null;
 
-  const tasks = await getTasks(user.id, { status, categoryId, priority, search });
+  // Same treatment as the category filter: an id that is not the caller's is
+  // silently dropped rather than queried, so the filter simply does not apply.
+  const requestedProject = single("project") ?? null;
+  const projectId =
+    requestedProject === NO_PROJECT
+      ? NO_PROJECT
+      : requestedProject && projects.some((p) => p.id === requestedProject)
+        ? requestedProject
+        : null;
+
+  const requestedMilestone = single("milestone") ?? null;
+  const milestoneId =
+    projectId && projectId !== NO_PROJECT && requestedMilestone
+      ? (projects
+          .find((p) => p.id === projectId)
+          ?.milestones.some((m) => m.id === requestedMilestone)
+          ? requestedMilestone
+          : null)
+      : null;
+
+  const tasks = await getTasks(user.id, {
+    status,
+    categoryId,
+    priority,
+    search,
+    projectId,
+    milestoneId,
+  });
   const today = getLocalToday(user.timezone);
 
   const openCount = tasks.filter((task) => !task.completed).length;
@@ -76,22 +108,25 @@ export default async function TasksPage({
 
       <TaskFilters
         categories={categories}
+        projects={projects}
         status={status}
         categoryId={categoryId}
         priority={priority}
         search={search}
+        projectId={projectId}
+        milestoneId={milestoneId}
       />
 
       <TaskList
         tasks={tasks}
         emptyIcon={<ListTodo />}
         emptyTitle={
-          search || categoryId || priority || status !== "open"
+          search || categoryId || priority || projectId || status !== "open"
             ? "No tasks match these filters"
             : "No open tasks"
         }
         emptyDescription={
-          search || categoryId || priority || status !== "open"
+          search || categoryId || priority || projectId || status !== "open"
             ? "Try widening or clearing the filters."
             : "Everything is done. Add a task to keep the streak going."
         }

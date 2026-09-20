@@ -11,6 +11,7 @@ import {
 } from "react";
 import { deleteTaskAction, toggleTaskAction } from "@/lib/tasks/actions";
 import type { TaskFormState } from "@/lib/tasks/form-state";
+import type { ProjectOption } from "@/lib/projects/queries";
 import type { CategoryView, TaskView } from "@/lib/tasks/queries";
 import { formatXpDelta } from "@/lib/xp";
 import type { LocalDate } from "@/lib/datetime";
@@ -27,13 +28,24 @@ import { TaskForm } from "./TaskForm";
  * dialog instance instead of each mounting their own.
  */
 
+/** Pre-selects the project (and optionally milestone) a task is created in. */
+export interface TaskCreateDefaults {
+  dueDate?: LocalDate | null;
+  /**
+   * Set when creating from inside a project or milestone, so the user never
+   * has to re-pick the context they are already standing in.
+   */
+  milestone?: { projectId: string; milestoneId: string | null } | null;
+}
+
 interface TaskDialogContextValue {
-  openCreate: (defaults?: { dueDate?: LocalDate | null }) => void;
+  openCreate: (defaults?: TaskCreateDefaults) => void;
   openEdit: (task: TaskView) => void;
   requestDelete: (task: TaskView) => void;
   /** Toggles completion and surfaces the XP result. */
   toggle: (task: TaskView) => void;
   categories: readonly CategoryView[];
+  projects: readonly ProjectOption[];
   today: LocalDate;
 }
 
@@ -47,16 +59,23 @@ export function useTaskDialogs(): TaskDialogContextValue {
 
 type DialogState =
   | { kind: "closed" }
-  | { kind: "create"; dueDate: LocalDate | null }
+  | {
+      kind: "create";
+      dueDate: LocalDate | null;
+      projectId: string | null;
+      milestoneId: string | null;
+    }
   | { kind: "edit"; task: TaskView }
   | { kind: "delete"; task: TaskView };
 
 export function TaskDialogProvider({
   categories,
+  projects,
   today,
   children,
 }: {
   categories: readonly CategoryView[];
+  projects: readonly ProjectOption[];
   today: LocalDate;
   children: ReactNode;
 }) {
@@ -66,8 +85,13 @@ export function TaskDialogProvider({
 
   const close = useCallback(() => setDialog({ kind: "closed" }), []);
 
-  const openCreate = useCallback((defaults?: { dueDate?: LocalDate | null }) => {
-    setDialog({ kind: "create", dueDate: defaults?.dueDate ?? null });
+  const openCreate = useCallback((defaults?: TaskCreateDefaults) => {
+    setDialog({
+      kind: "create",
+      dueDate: defaults?.dueDate ?? null,
+      projectId: defaults?.milestone?.projectId ?? null,
+      milestoneId: defaults?.milestone?.milestoneId ?? null,
+    });
   }, []);
 
   const openEdit = useCallback((task: TaskView) => setDialog({ kind: "edit", task }), []);
@@ -131,8 +155,8 @@ export function TaskDialogProvider({
   }, [dialog, close, push]);
 
   const value = useMemo<TaskDialogContextValue>(
-    () => ({ openCreate, openEdit, requestDelete, toggle, categories, today }),
-    [openCreate, openEdit, requestDelete, toggle, categories, today],
+    () => ({ openCreate, openEdit, requestDelete, toggle, categories, projects, today }),
+    [openCreate, openEdit, requestDelete, toggle, categories, projects, today],
   );
 
   return (
@@ -157,8 +181,11 @@ export function TaskDialogProvider({
             key={dialog.kind === "edit" ? dialog.task.id : "create"}
             formId="task-form"
             categories={categories}
+            projects={projects}
             task={dialog.kind === "edit" ? dialog.task : null}
             defaultDueDate={dialog.kind === "create" ? dialog.dueDate : null}
+            defaultProjectId={dialog.kind === "create" ? dialog.projectId : null}
+            defaultMilestoneId={dialog.kind === "create" ? dialog.milestoneId : null}
             onSuccess={handleFormSuccess}
             onCancel={close}
           />

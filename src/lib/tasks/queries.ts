@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getPriorityConfig } from "@/config/priorities";
+import { NO_PROJECT } from "@/config/projects";
 import {
   addDays,
   dbDateToLocalDate,
@@ -174,8 +175,6 @@ export interface TaskListFilters {
   readonly milestoneId?: string | null;
 }
 
-/** Sentinel for "tasks with no project", which a null id cannot express. */
-export const NO_PROJECT = "none";
 
 export async function getTasks(userId: string, filters: TaskListFilters = {}): Promise<TaskView[]> {
   const {

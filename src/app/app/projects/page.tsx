@@ -1,15 +1,75 @@
 import type { Metadata } from "next";
-import { FolderKanban } from "lucide-react";
-import { ComingSoon } from "@/components/layout/ComingSoon";
-import { findNavItem } from "@/config/navigation";
+import { PROJECT_FILTERS, PROJECT_SORTS, type ProjectSort, type ProjectStatusFilter } from "@/config/projects";
+import { requireUser } from "@/lib/auth/guard";
+import { getLocalToday } from "@/lib/datetime";
+import { getProjects, getProjectStatusCounts } from "@/lib/projects/queries";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { NewProjectButton } from "@/components/projects/NewProjectButton";
+import { ProjectFilterBar } from "@/components/projects/ProjectFilterBar";
+import { ProjectList } from "@/components/projects/ProjectList";
 
 export const metadata: Metadata = { title: "Projects" };
 
 /**
- * Placeholder route. Copy comes from the navigation config so the sidebar and
- * this page can never disagree about what Projects is for.
+ * The project list.
+ *
+ * A server component: filtering, searching and sorting all happen in the
+ * query layer, so the browser receives only the projects it is going to show.
+ * Unrecognised search params fall back to the default rather than reaching the
+ * database.
  */
-export default function ProjectsPage() {
-  const item = findNavItem("/app/projects");
-  return <ComingSoon title="Projects" summary={item?.summary} icon={FolderKanban} />;
+function parseStatus(value: string | undefined): ProjectStatusFilter {
+  const known = PROJECT_FILTERS.map((f) => f.value);
+  return known.includes(value as ProjectStatusFilter) ? (value as ProjectStatusFilter) : "ACTIVE";
+}
+
+function parseSort(value: string | undefined): ProjectSort {
+  const known = PROJECT_SORTS.map((s) => s.value);
+  return known.includes(value as ProjectSort) ? (value as ProjectSort) : "urgency";
+}
+
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const user = await requireUser();
+  const params = await searchParams;
+
+  const single = (key: string): string | undefined => {
+    const value = params[key];
+    return Array.isArray(value) ? value[0] : value;
+  };
+
+  const status = parseStatus(single("status"));
+  const sort = parseSort(single("sort"));
+  const search = single("q")?.trim() || null;
+
+  const [projects, counts] = await Promise.all([
+    getProjects(user.id, user.timezone, { status, search, sort }),
+    getProjectStatusCounts(user.id),
+  ]);
+
+  const today = getLocalToday(user.timezone);
+  const isFiltered = status !== "ACTIVE" || Boolean(search);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Projects"
+        description={
+          counts.ALL > 0 ? (
+            <span className="tnum">
+              {counts.ACTIVE} active · {counts.COMPLETED} completed · {counts.ARCHIVED} archived
+            </span>
+          ) : undefined
+        }
+        actions={<NewProjectButton withShortcut />}
+      />
+
+      <ProjectFilterBar status={status} sort={sort} search={search} counts={counts} />
+
+      <ProjectList projects={projects} today={today} isFiltered={isFiltered} />
+    </div>
+  );
 }

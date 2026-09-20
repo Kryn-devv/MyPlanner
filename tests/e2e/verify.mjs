@@ -257,12 +257,18 @@ try {
   });
 
   // ===================== PLACEHOLDERS =====================
-  section("Phase 2 placeholder routes");
-  for (const route of ["/app/calendar", "/app/projects", "/app/analytics"]) {
+  section("Unbuilt feature placeholders");
+  // /app/projects was a placeholder in Phase 1 and is now a real route, so it
+  // is asserted the other way round below.
+  for (const route of ["/app/calendar", "/app/goals", "/app/analytics"]) {
     await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" });
     const txt = await page.locator("main#main").innerText();
     check(`${route} renders a coming-soon state`, txt.includes("is not built yet"));
   }
+
+  await page.goto(`${BASE}/app/projects`, { waitUntil: "networkidle" });
+  check("/app/projects is a real route, not a placeholder",
+    !(await page.locator("text=is not built yet").count()));
   await page.screenshot({ path: `${SHOTS}/09-coming-soon.png`, fullPage: true });
 
   // ===================== SETTINGS =====================

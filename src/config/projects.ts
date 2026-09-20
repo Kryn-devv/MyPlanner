@@ -83,6 +83,16 @@ export const PROJECT_SORTS: readonly { value: ProjectSort; label: string }[] = [
   { value: "priority", label: "Priority" },
 ];
 
+/**
+ * Sentinel for "tasks with no project", which a null id cannot express in a
+ * URL or a `<select>`.
+ *
+ * Lives here rather than beside the task queries because client components
+ * need it, and those queries are `server-only` — importing the value from
+ * there would drag the whole server module into the browser bundle.
+ */
+export const NO_PROJECT = "none";
+
 export const MAX_PROJECT_NAME_LENGTH = 100;
 export const MAX_PROJECT_DESCRIPTION_LENGTH = 2000;
 export const MAX_MILESTONE_TITLE_LENGTH = 120;

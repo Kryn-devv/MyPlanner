@@ -27,6 +27,8 @@ export interface TaskListProps {
   emptyAction?: ReactNode;
   dense?: boolean;
   hideDueDate?: boolean;
+  /** Hides project chips where the surrounding context already states it. */
+  hideProject?: boolean;
   /** Omits the edit/delete menu on read-only dashboard panels. */
   readOnly?: boolean;
   className?: string;
@@ -40,6 +42,7 @@ export function TaskList({
   emptyAction,
   dense = false,
   hideDueDate = false,
+  hideProject = false,
   readOnly = false,
   className,
 }: TaskListProps) {
@@ -88,6 +91,7 @@ export function TaskList({
             onEdit={readOnly ? undefined : openEdit}
             onDelete={readOnly ? undefined : requestDelete}
             hideDueDate={hideDueDate}
+            hideProject={hideProject}
           />
         ))}
       </AnimatePresence>

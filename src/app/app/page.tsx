@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { AlertTriangle, CalendarRange, CheckCircle2, ListTodo, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth/guard";
 import { getGreeting } from "@/lib/datetime";
+import { getActiveProjectsForDashboard, getProjectStatusCounts } from "@/lib/projects/queries";
 import { getDashboardData } from "@/lib/tasks/queries";
+import { ActiveProjectsPanel } from "@/components/dashboard/ActiveProjectsPanel";
 import { DailyProgressCard } from "@/components/dashboard/DailyProgressCard";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
@@ -25,7 +27,14 @@ export const metadata: Metadata = { title: "Dashboard" };
  */
 export default async function DashboardPage() {
   const user = await requireUser();
-  const data = await getDashboardData(user.id, user.timezone);
+
+  // Fetched alongside the dashboard's own batch rather than after it: projects
+  // are an extra panel, not an extra waterfall.
+  const [data, activeProjects, projectCounts] = await Promise.all([
+    getDashboardData(user.id, user.timezone),
+    getActiveProjectsForDashboard(user.id, user.timezone, 3),
+    getProjectStatusCounts(user.id),
+  ]);
 
   const greeting = getGreeting(user.timezone);
   const hasAnyTask = data.totalOpenTasks > 0 || data.todayTasks.length > 0;
@@ -97,6 +106,12 @@ export default async function DashboardPage() {
               dense
             />
           </DashboardPanel>
+
+          <ActiveProjectsPanel
+            projects={activeProjects}
+            today={data.today}
+            totalActive={projectCounts.ACTIVE}
+          />
 
           <DeadlinesPanel deadlines={data.deadlines} today={data.today} />
 

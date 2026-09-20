@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { formatDuration, formatRelativeDay, formatTime, type LocalDate } from "@/lib/datetime";
 import type { TaskView } from "@/lib/tasks/queries";
 import { Button } from "@/components/ui/Button";
+import { ProjectChip } from "@/components/projects/ProjectBadges";
 import { CategoryBadge } from "./CategoryBadge";
 import { PriorityBadge, PriorityRail } from "./PriorityBadge";
 import { TaskCheckbox } from "./TaskCheckbox";
@@ -31,6 +32,8 @@ export interface TaskCardProps {
   onDelete?: (task: TaskView) => void;
   /** Hides the due-date chip on panels that are already grouped by date. */
   hideDueDate?: boolean;
+  /** Hides the project chip where the surrounding context already states it. */
+  hideProject?: boolean;
   className?: string;
 }
 
@@ -42,6 +45,7 @@ export function TaskCard({
   onEdit,
   onDelete,
   hideDueDate = false,
+  hideProject = false,
   className,
 }: TaskCardProps) {
   const reduceMotion = useReducedMotion();
@@ -89,6 +93,14 @@ export function TaskCard({
           <PriorityBadge priority={task.priority} />
 
           {task.category && <CategoryBadge name={task.category.name} color={task.category.color} />}
+
+          {!hideProject && task.project && (
+            <ProjectChip
+              name={task.project.name}
+              color={task.project.color}
+              milestone={task.milestone?.title ?? null}
+            />
+          )}
 
           {!hideDueDate && task.dueDate && (
             <span

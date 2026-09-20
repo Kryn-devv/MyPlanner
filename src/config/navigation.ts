@@ -33,7 +33,10 @@ export interface NavItem {
   /** Typed against the app's real routes, so a dead link fails the build. */
   readonly href: Route;
   readonly icon: LucideIcon;
-  /** 1 = shipped in Phase 1. Anything higher renders a "coming soon" page. */
+  /**
+   * 1 = shipped and reachable. Anything higher renders a "coming soon" page
+   * and shows a lock in the sidebar. Projects moved from 2 to 1 in Phase 2.
+   */
   readonly phase: 1 | 2;
   /** Short line shown on the placeholder page. */
   readonly summary?: string;
@@ -83,13 +86,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     title: "Build",
     items: [
-      {
-        label: "Projects",
-        href: "/app/projects",
-        icon: FolderKanban,
-        phase: 2,
-        summary: "Group related tasks into work with a beginning and an end.",
-      },
+      { label: "Projects", href: "/app/projects", icon: FolderKanban, phase: 1 },
       {
         label: "Goals",
         href: "/app/goals",
@@ -170,28 +167,3 @@ const ALL_ITEMS: readonly NavItem[] = [
 export function findNavItem(href: Route): NavItem | undefined {
   return ALL_ITEMS.find((item) => item.href === href);
 }
-
-/**
- * Quick-add actions.
- *
- * Only `task` is enabled in Phase 1. The others are listed but disabled so the
- * menu does not have to be redesigned when they land — and so the intent of
- * the product is legible from the start.
- */
-export interface QuickAction {
-  readonly id: "task" | "event" | "meeting" | "project" | "goal" | "habit" | "note";
-  readonly label: string;
-  readonly icon: LucideIcon;
-  readonly enabled: boolean;
-  readonly shortcut?: string;
-}
-
-export const QUICK_ACTIONS: readonly QuickAction[] = [
-  { id: "task", label: "Task", icon: CheckSquare, enabled: true, shortcut: "N" },
-  { id: "event", label: "Event", icon: CalendarDays, enabled: false },
-  { id: "meeting", label: "Meeting", icon: Users, enabled: false },
-  { id: "project", label: "Project", icon: FolderKanban, enabled: false },
-  { id: "goal", label: "Goal", icon: Target, enabled: false },
-  { id: "habit", label: "Habit", icon: Repeat, enabled: false },
-  { id: "note", label: "Note", icon: NotebookPen, enabled: false },
-];
