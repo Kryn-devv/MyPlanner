@@ -6,15 +6,11 @@ import { NotFoundError, UnauthorizedError } from "@/lib/auth/guard";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { validateCategory, validateTask } from "@/lib/validation/task";
-import type { FieldErrors } from "@/lib/validation/result";
 import { getCategories } from "./queries";
-import {
-  createTask,
-  deleteTask,
-  setTaskCompletion,
-  updateTask,
-  type CompletionOutcome,
-} from "./service";
+// A "use server" module may only export async functions, so the form-state
+// shape and its initial value live in their own module.
+import type { TaskFormState } from "./form-state";
+import { createTask, deleteTask, setTaskCompletion, updateTask } from "./service";
 
 /**
  * Task Server Actions — the app's only write surface.
@@ -28,16 +24,6 @@ import {
  * consumed by `useActionState` and an unhandled throw surfaces to the user as
  * a blank error page.
  */
-
-export interface TaskFormState {
-  readonly status: "idle" | "success" | "error";
-  readonly errors?: FieldErrors;
-  readonly message?: string;
-  /** Present on success so the UI can celebrate XP and level-ups. */
-  readonly outcome?: Pick<CompletionOutcome, "xpDelta" | "level" | "leveledUp">;
-}
-
-export const IDLE_TASK_FORM_STATE: TaskFormState = { status: "idle" };
 
 /** Maps a thrown error to a message safe to show a user. */
 function toErrorState(error: unknown, fallback: string): TaskFormState {

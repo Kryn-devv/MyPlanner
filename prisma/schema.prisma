@@ -19,6 +19,10 @@
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
+  // Emit explicit file extensions in the generated client's own imports.
+  // Without this the client's internal `./enums` specifiers are unresolvable
+  // by Node's ESM loader, which is what runs the seed script directly.
+  importFileExtension = "ts"
 }
 
 datasource db {

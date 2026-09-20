@@ -1,10 +1,18 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { loadEnv } from "./tests/load-env.ts";
 
-// `globalSetup` runs in this process, before any setup file, so .env has to be
-// loaded here too — not just in tests/setup.ts.
-loadEnv();
+// `globalSetup` runs in this process, before any setup file, so `.env` has to
+// be loaded here too — not only in tests/setup.ts.
+const envPath = resolve(process.cwd(), ".env");
+if (existsSync(envPath)) {
+  try {
+    process.loadEnvFile(envPath);
+  } catch {
+    // Fall through to the explicit "TEST_DATABASE_URL is not set" error.
+  }
+}
 
 export default defineConfig({
   resolve: {
