@@ -60,13 +60,9 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         phase: 2,
         summary: "A single place for everything captured but not yet sorted.",
       },
-      {
-        label: "Calendar",
-        href: "/app/calendar",
-        icon: CalendarDays,
-        phase: 2,
-        summary: "Your tasks, events and meetings on one timeline.",
-      },
+      // Phase 4.1: a view over the dates that already exist on tasks,
+      // milestones, projects and goals — not a store of its own.
+      { label: "Calendar", href: "/app/calendar", icon: CalendarDays, phase: 1 },
       {
         label: "Timeline",
         href: "/app/timeline",

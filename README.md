@@ -1,4 +1,4 @@
-# NOVA — Phases 1–3
+# NOVA — Phases 1–4.1
 
 > **NOVA** is an internal working name. The brand is not hard-coded anywhere in
 > the source: set `NEXT_PUBLIC_APP_NAME` and it updates across the UI and
@@ -19,12 +19,17 @@ Tasks carry priorities, categories, deadlines and estimates, and feed an
 XP/level/streak progression system. Every level above them is optional: a task
 needs no project, and a project needs no goal.
 
-**Shipped:** authentication, tasks, projects, milestones, goals, progression.
-**Not yet:** calendar, habits, focus sessions, meetings, notes, analytics, AI
-planning. Those exist as navigation placeholders, and the data model is shaped
-so they can be added without rewriting what is here — Phases 2 and 3 both
-proved that out, adding constraints to columns an earlier phase had left in
-place rather than rewriting the tables beneath them.
+Above all four sits a **calendar** — a view, not a fifth level. It reads the
+dates that already live on tasks, milestones, projects and goals, and stores
+nothing of its own.
+
+**Shipped:** authentication, tasks, projects, milestones, goals, progression,
+calendar and timeline.
+**Not yet:** habits, focus sessions, meetings, notes, analytics, AI planning.
+Those exist as navigation placeholders, and the data model is shaped so they
+can be added without rewriting what is here — Phases 2 and 3 proved that out by
+adding constraints to columns an earlier phase had left in place, and Phase 4.1
+proved it again by shipping a whole surface with **no schema change at all**.
 
 ---
 
@@ -94,12 +99,14 @@ transactions, and a mocked client would verify none of them.
 `TEST_DATABASE_URL` is reset on every run, so never point it at a database
 holding real data.
 
-Three on-demand browser harnesses cover the signed-in flows end to end against
+Four on-demand browser harnesses cover the signed-in flows end to end against
 a production build — `tests/e2e/verify.mjs` (tasks, XP, streaks, auth),
-`tests/e2e/verify-projects.mjs` (projects, milestones, assignment) and
-`tests/e2e/verify-goals.mjs` (goals, project connection, progress). None is
-part of `npm test`, and Playwright is not a project dependency; see the header
-of any of them to run it.
+`tests/e2e/verify-projects.mjs` (projects, milestones, assignment),
+`tests/e2e/verify-goals.mjs` (goals, project connection, progress) and
+`tests/e2e/verify-calendar.mjs` (the four calendar views, URL state, filters,
+and that moving a date moves the item). None is part of `npm test`, and
+Playwright is not a project dependency; see the header of any of them to run
+it.
 
 ## Architecture
 
@@ -108,7 +115,7 @@ src/
   app/                      routes (App Router)
     (auth)/                 login, signup — redirects away if already signed in
     app/                    protected shell: dashboard, tasks, projects,
-                            goals, settings + 10 placeholder routes
+                            goals, calendar, settings + placeholder routes
   components/
     ui/                     Button, Field, Modal, ProgressBar, Toast, States
     layout/                 Sidebar, Topbar, MobileNav, PageHeader, ComingSoon
@@ -116,16 +123,19 @@ src/
     tasks/                  TaskCard, TaskList, TaskForm, badges, dialogs
     projects/               ProjectCard, ProjectHeader, MilestoneList, forms
     goals/                  GoalCard, GoalHeader, GoalStats, project section
+    calendar/               month/week/day/timeline views, toolbar, filters
     xp/  streaks/  auth/  settings/
   lib/
     auth/                   password (scrypt), sessions, guards, actions
     tasks/                  service (writes), queries (reads), actions
     projects/               service, queries, actions, progress
     goals/                  service, queries, actions, progress
+    calendar/               range maths, item ordering, bounded reads (no
+                            writes — the calendar owns no data)
     validation/             hand-rolled, shared by client and server
     leveling.ts  streak.ts  xp.ts  datetime.ts  prisma.ts
   config/                   app name, priorities, categories, colours,
-                            projects, goals, navigation
+                            projects, goals, calendar, navigation
 ```
 
 ### Decisions worth knowing
@@ -201,6 +211,36 @@ were — shelving an objective is not a decision about the work already under
 way, and silently rewriting a week of someone's plans to tidy up an
 organisational layer would be indefensible.
 
+**The calendar is a view, not a second source of truth.** There is no
+`CalendarEvent` table, and Phase 4.1 added no migration. Every item on the grid
+is read live from the column that already owns the date — `Task.dueDate` and
+`dueTime`, `Milestone.dueDate`, `Project.startDate`/`dueDate`,
+`Goal.startDate`/`targetDate` — and normalised into a `CalendarItem`, an
+application-level DTO that exists for the length of one render and is never
+written anywhere. A calendar record would mean a due date lived in two places,
+and the first time one of them was updated without the other, the calendar
+would start lying. Because it holds nothing, it cannot drift: moving a task's
+date moves it on the calendar with nothing to keep in sync.
+
+That is also why this phase is read-only. A due date has exactly one place it
+can be edited — the record that owns it — so the calendar links to that record
+rather than offering a second way to set the same field.
+
+**Every calendar read is bounded and scoped in SQL.** A view asks for an
+inclusive day range (42 days at most, for the month grid) and nothing wider;
+the range itself is validated before it reaches the database, so a hand-edited
+URL cannot ask for a table scan. Ownership is in the `WHERE` clause of all four
+queries. Milestones are the interesting case: they carry no `userId` of their
+own, so they are filtered through `project: { userId }` — still in SQL, never
+by loading rows and discarding them afterwards.
+
+**Calendar dates are computed as strings, never with `Intl`.** The grid is
+built from `"YYYY-MM-DD"` arithmetic and the same fixed month and weekday
+tables the rest of the app uses, and weeks start on Monday by configuration
+rather than by locale. A locale-derived grid renders one way on the server and
+another in the browser, which is a hydration mismatch rather than a cosmetic
+difference.
+
 ## Data model
 
 | Model | Purpose |
@@ -219,9 +259,18 @@ rather than rewriting what came before; the one removal in the set is Phase 3
 dropping the unused `Task.goalId` column, which was verified NULL in every row
 and referenced by no code before it went.
 
+Phase 4.1 added no model, no column and no migration: the calendar is built
+entirely from the date columns above.
+
 Routes: `/app` · `/app/tasks` · `/app/projects` · `/app/projects/[projectId]` ·
-`/app/goals` · `/app/goals/[goalId]` · `/app/settings`, plus `/login`,
-`/signup` and ten placeholder routes for features not yet built.
+`/app/goals` · `/app/goals/[goalId]` · `/app/calendar` · `/app/settings`, plus
+`/login`, `/signup` and the remaining placeholder routes.
+
+The calendar's state is entirely in its URL — `view` (`month`, `week`, `day`,
+`timeline`), `date` (the anchor day), `kinds` (a comma-separated subset of
+`task,milestone,project,goal`) and `show` (`all` or `open`). Every one of them
+is validated and falls back to a default, so a link is shareable and a
+hand-edited one cannot produce an error page.
 
 ## Future readiness
 
@@ -253,6 +302,10 @@ is a matter of flipping its `phase` and replacing one page body.
 - Milestone ordering is stored (`position`) and respected everywhere, but there
   is no drag-to-reorder UI yet; the `reorderMilestones` service and action are
   in place for one.
+- The calendar is read-only: there is no drag-to-reschedule, and dates are
+  changed on the task, project or goal they belong to.
+- The calendar shows no all-day *spans*. A project with a start and a due date
+  appears as two marks rather than a bar drawn across the weeks between them.
 - Goals have no ordering of their own — they sort by target date, name,
   priority or recency, but cannot be arranged by hand.
 - The goal detail page summarises task counts but does not list individual

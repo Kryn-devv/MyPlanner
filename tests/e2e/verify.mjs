@@ -258,15 +258,16 @@ try {
 
   // ===================== PLACEHOLDERS =====================
   section("Unbuilt feature placeholders");
-  // /app/projects (Phase 2) and /app/goals (Phase 3) were placeholders here
-  // once and are now real routes, so they are asserted the other way round.
-  for (const route of ["/app/calendar", "/app/deadlines", "/app/analytics"]) {
+  // /app/projects (Phase 2), /app/goals (Phase 3) and /app/calendar (Phase
+  // 4.1) were placeholders here once and are now real routes, so they are
+  // asserted the other way round.
+  for (const route of ["/app/inbox", "/app/deadlines", "/app/analytics"]) {
     await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" });
     const txt = await page.locator("main#main").innerText();
     check(`${route} renders a coming-soon state`, txt.includes("is not built yet"));
   }
 
-  for (const route of ["/app/projects", "/app/goals"]) {
+  for (const route of ["/app/projects", "/app/goals", "/app/calendar"]) {
     await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" });
     check(`${route} is a real route, not a placeholder`,
       !(await page.locator("text=is not built yet").count()));
