@@ -56,6 +56,7 @@ export async function createTestTask(
     priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
     xpReward: number;
     dueDate: Date | null;
+    dueTime: string | null;
     categoryId: string | null;
     completed: boolean;
     projectId: string | null;
@@ -69,6 +70,7 @@ export async function createTestTask(
       priority: overrides.priority ?? "MEDIUM",
       xpReward: overrides.xpReward ?? 20,
       dueDate: overrides.dueDate ?? null,
+      dueTime: overrides.dueTime ?? null,
       categoryId: overrides.categoryId ?? null,
       completed: overrides.completed ?? false,
       completedAt: overrides.completed ? new Date() : null,
@@ -105,6 +107,7 @@ export async function createTestProject(
     name: string;
     status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
     priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    startDate: Date | null;
     dueDate: Date | null;
     color: string;
     goalId: string | null;
@@ -116,6 +119,7 @@ export async function createTestProject(
       name: overrides.name ?? "Test project",
       status: overrides.status ?? "ACTIVE",
       priority: overrides.priority ?? "MEDIUM",
+      startDate: overrides.startDate ?? null,
       dueDate: overrides.dueDate ?? null,
       color: overrides.color ?? "violet",
       goalId: overrides.goalId ?? null,
@@ -129,6 +133,7 @@ export async function createTestGoal(
     title: string;
     status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
     priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    startDate: Date | null;
     targetDate: Date | null;
   }> = {},
 ) {
@@ -138,6 +143,7 @@ export async function createTestGoal(
       title: overrides.title ?? "Test goal",
       status: overrides.status ?? "ACTIVE",
       priority: overrides.priority ?? "MEDIUM",
+      startDate: overrides.startDate ?? null,
       targetDate: overrides.targetDate ?? null,
     },
   });

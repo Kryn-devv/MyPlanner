@@ -162,8 +162,8 @@ function getTimezoneOffsetMs(instant: Date, timezone: string): number {
  * days away. Fixed tables make the output identical everywhere, immune to ICU
  * drift, and exactly assertable in tests.
  */
-const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const WEEKDAYS_LONG = [
+export const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+export const WEEKDAYS_LONG = [
   "Sunday",
   "Monday",
   "Tuesday",
@@ -172,16 +172,16 @@ const WEEKDAYS_LONG = [
   "Friday",
   "Saturday",
 ] as const;
-const MONTHS_SHORT = [
+export const MONTHS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
-const MONTHS_LONG = [
+export const MONTHS_LONG = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ] as const;
 
-interface DateParts {
+export interface DateParts {
   readonly weekday: number;
   readonly day: number;
   readonly month: number;
@@ -189,7 +189,7 @@ interface DateParts {
 }
 
 /** Splits a calendar day into its parts, read in UTC so nothing shifts. */
-function partsOf(date: LocalDate): DateParts {
+export function partsOf(date: LocalDate): DateParts {
   const parsed = new Date(`${date}T00:00:00Z`);
   return {
     weekday: parsed.getUTCDay(),
