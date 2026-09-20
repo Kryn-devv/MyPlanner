@@ -37,6 +37,14 @@ export interface ProjectInput {
   readonly status: ProjectStatus;
   readonly startDate: LocalDate | null;
   readonly dueDate: LocalDate | null;
+  /**
+   * The objective this project serves, or null.
+   *
+   * Only the shape is read here. Whether the goal exists and belongs to the
+   * caller is settled against the database in the service layer, inside the
+   * write transaction — see `assertGoalOwned`.
+   */
+  readonly goalId: string | null;
 }
 
 export function validateProject(form: FormData): ValidationResult<ProjectInput> {
@@ -49,6 +57,7 @@ export function validateProject(form: FormData): ValidationResult<ProjectInput> 
   const rawStatus = readString(form, "status") || "ACTIVE";
   const startDate = readOptionalString(form, "startDate");
   const dueDate = readOptionalString(form, "dueDate");
+  const goalId = readOptionalString(form, "goalId");
 
   // -- name ----------------------------------------------------------------
   if (!name) bag.add("name", "A project name is required.");
@@ -91,6 +100,7 @@ export function validateProject(form: FormData): ValidationResult<ProjectInput> 
     status: isProjectStatus(rawStatus) ? rawStatus : "ACTIVE",
     startDate: (startDate as LocalDate | null) ?? null,
     dueDate: (dueDate as LocalDate | null) ?? null,
+    goalId,
   });
 }
 

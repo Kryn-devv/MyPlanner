@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// NOVA — data model (Phase 1 + Phase 2)
+// NOVA — data model (Phases 1–3)
 //
 // Design notes
 // ------------
@@ -14,6 +14,10 @@
 // * Ownership of a Milestone flows through its Project rather than being
 //   denormalised onto the row. One owner column cannot drift from another,
 //   and every milestone query already has to load or filter by project.
+// * The hierarchy is Goal -> Project -> Milestone -> Task, and each level is
+//   reached through exactly one path. A task's goal is its project's goal;
+//   there is deliberately no Task.goalId, because two paths could disagree
+//   about which goal a task serves and nothing could adjudicate between them.
 // * XP is an append-only ledger (`XpTransaction`). `UserStats.totalXp` is a
 //   cached rollup of that ledger and is only ever mutated inside the same
 //   database transaction that writes the ledger row.
@@ -48,6 +52,18 @@ enum Priority {
 enum XpSource {
   TASK_COMPLETION
   ADJUSTMENT
+}
+
+/// Lifecycle of a strategic objective.
+///
+/// Mirrors ProjectStatus deliberately — the two are read side by side, and a
+/// different vocabulary at each level would be noise. Status is never inferred
+/// from the work underneath: a goal whose every task is ticked is not
+/// necessarily achieved, and deciding that for the user is not the app's call.
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
 }
 
 /// Lifecycle of a piece of larger work.
@@ -98,6 +114,7 @@ model User {
   sessions       Session[]
   tasks          Task[]
   categories     Category[]
+  goals          Goal[]
   projects       Project[]
   xpTransactions XpTransaction[]
   stats          UserStats?
@@ -151,6 +168,51 @@ model Category {
 }
 
 // ---------------------------------------------------------------------------
+// Goal domain
+// ---------------------------------------------------------------------------
+
+/// A strategic objective — the reason a body of work exists.
+///
+/// A goal answers "where am I trying to get?"; a project answers "what am I
+/// building?". Keeping them distinct is the point of this layer, so a Goal
+/// deliberately has no colour, no milestones and no tasks of its own: it owns
+/// none of the work, it only gives projects a reason.
+///
+/// Progress is derived from the tasks inside its projects (see
+/// src/lib/goals/progress.ts) and is never stored. Status is always explicit.
+model Goal {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  title       String
+  description String?
+
+  status   GoalStatus @default(ACTIVE)
+  priority Priority   @default(MEDIUM)
+
+  /// Calendar dates in the user's timezone, stored as DATE for the same reason
+  /// Project.dueDate is: a deadline is a day, not an instant.
+  startDate  DateTime? @db.Date
+  /// What the user is aiming at. Called `targetDate` rather than `dueDate`
+  /// because a goal is an intention, not an obligation handed to you.
+  targetDate DateTime? @db.Date
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  archivedAt  DateTime?
+
+  projects Project[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, targetDate])
+  // Serves the default list: this user's active goals, soonest target first.
+  @@index([userId, status, targetDate])
+}
+
+// ---------------------------------------------------------------------------
 // Project domain
 // ---------------------------------------------------------------------------
 
@@ -165,6 +227,15 @@ model Project {
   id     String @id @default(cuid())
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String
+
+  /// The objective this project serves, if any. Optional on purpose: plenty of
+  /// work is worth doing without laddering up to a stated goal, and forcing a
+  /// goal on every project would make the layer a chore rather than a lens.
+  ///
+  /// `onDelete: SetNull` — deleting a goal releases its projects, it never
+  /// destroys them. Same policy as project -> task, one level up.
+  goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  goalId String?
 
   name        String
   description String?
@@ -199,6 +270,10 @@ model Project {
   @@index([userId, dueDate])
   // Serves the default list: this user's active projects, soonest deadline first.
   @@index([userId, status, dueDate])
+  @@index([goalId])
+  // Serves "this user's projects under this goal", the goal detail page's
+  // main query and the project list's goal filter.
+  @@index([userId, goalId])
 }
 
 /// A checkpoint within a project.
@@ -279,11 +354,17 @@ model Task {
   milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   milestoneId String?
 
-  // -- Phase 3+ forward references -------------------------------------------
-  // Still plain nullable columns: their tables do not exist yet. Kept for the
-  // same reason projectId was kept through Phase 1 — it made this phase an
-  // additive migration instead of a rewrite.
-  goalId    String?
+  // -- Forward references for features that do not exist yet ----------------
+  // Plain nullable columns, kept for the same reason projectId was kept through
+  // Phase 1: it made Phase 2 an additive migration instead of a rewrite.
+  //
+  // `goalId` used to sit here and was deliberately dropped in Phase 3 rather
+  // than wired up. A task's goal is its project's goal. A second, direct link
+  // would let a task claim one goal while its project served another, with
+  // nothing able to decide which is right — and goal progress would have no
+  // defensible definition. The column was provably unused (every row NULL, no
+  // code referencing it), so removing it was safer than leaving something that
+  // reads like a relation waiting to be connected.
   habitId   String?
   meetingId String?
   eventId   String?
@@ -309,7 +390,6 @@ model Task {
   // "this user's tasks in this project".
   @@index([userId, projectId])
   @@index([userId, milestoneId])
-  @@index([goalId])
   @@index([habitId])
 }
 

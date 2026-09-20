@@ -24,6 +24,7 @@ const input = (overrides: Partial<Parameters<typeof createProject>[1]> = {}) => 
   status: "ACTIVE" as const,
   startDate: null,
   dueDate: null,
+  goalId: null,
   ...overrides,
 });
 

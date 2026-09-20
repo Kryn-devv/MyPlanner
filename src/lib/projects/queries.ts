@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ProjectSort, ProjectStatusFilter } from "@/config/projects";
+import { NO_GOAL } from "@/config/goals";
 import { dbDateToLocalDate, getLocalToday, localDateToDbDate, type LocalDate } from "@/lib/datetime";
 import { getPriorityConfig } from "@/config/priorities";
 import { prisma } from "@/lib/prisma";
@@ -21,8 +22,17 @@ import { calculateProgress, isMilestoneOverdue, isProjectOverdue, type Progress 
  *    strings — because server components hand these straight to client ones.
  */
 
+/** Just enough goal identity to render a breadcrumb on a project. */
+export interface ProjectGoalRef {
+  readonly id: string;
+  readonly title: string;
+  readonly status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
+}
+
 export interface ProjectView {
   readonly id: string;
+  readonly goalId: string | null;
+  readonly goal: ProjectGoalRef | null;
   readonly name: string;
   readonly description: string | null;
   readonly color: string;
@@ -58,6 +68,10 @@ export interface MilestoneView {
 
 const PROJECT_SELECT = {
   id: true,
+  goalId: true,
+  // Selected rather than joined wholesale: a project shows its goal's title,
+  // never its description or dates.
+  goal: { select: { id: true, title: true, status: true } },
   name: true,
   description: true,
   color: true,
@@ -73,6 +87,8 @@ const PROJECT_SELECT = {
 
 type ProjectRow = {
   id: string;
+  goalId: string | null;
+  goal: { id: string; title: string; status: "ACTIVE" | "COMPLETED" | "ARCHIVED" } | null;
   name: string;
   description: string | null;
   color: string;
@@ -89,6 +105,8 @@ type ProjectRow = {
 function toProjectView(row: ProjectRow): ProjectView {
   return {
     id: row.id,
+    goalId: row.goalId,
+    goal: row.goal,
     name: row.name,
     description: row.description,
     color: row.color,
@@ -167,6 +185,8 @@ export interface ProjectListFilters {
   readonly status?: ProjectStatusFilter;
   readonly search?: string | null;
   readonly sort?: ProjectSort;
+  /** A goal id, or the literal "none" for projects not under any goal. */
+  readonly goalId?: string | null;
 }
 
 /** Translates a UI filter into a WHERE clause. */
@@ -188,13 +208,14 @@ export async function getProjects(
   filters: ProjectListFilters = {},
   now: Date = new Date(),
 ): Promise<ProjectSummaryView[]> {
-  const { status = "ACTIVE", search = null, sort = "urgency" } = filters;
+  const { status = "ACTIVE", search = null, sort = "urgency", goalId = null } = filters;
   const today = getLocalToday(timezone, now);
 
   const rows = await prisma.project.findMany({
     where: {
       userId,
       ...statusWhere(status, today),
+      ...(goalId ? (goalId === NO_GOAL ? { goalId: null } : { goalId }) : {}),
       ...(search
         ? {
             OR: [

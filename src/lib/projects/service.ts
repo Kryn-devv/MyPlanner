@@ -3,6 +3,7 @@ import "server-only";
 import { MAX_MILESTONES_PER_PROJECT } from "@/config/projects";
 import { NotFoundError } from "@/lib/auth/guard";
 import { localDateToDbDate } from "@/lib/datetime";
+import { assertGoalOwned } from "@/lib/goals/service";
 import { prisma } from "@/lib/prisma";
 import type { MilestoneInput, ProjectInput } from "@/lib/validation/project";
 import type { MilestoneStatus, ProjectStatus } from "@/generated/prisma/enums";
@@ -35,20 +36,27 @@ type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 // ---------------------------------------------------------------------------
 
 export async function createProject(userId: string, input: ProjectInput): Promise<{ id: string }> {
-  return prisma.project.create({
-    data: {
-      userId,
-      name: input.name,
-      description: input.description,
-      color: input.color,
-      priority: input.priority,
-      status: input.status,
-      startDate: input.startDate ? localDateToDbDate(input.startDate) : null,
-      dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
-      completedAt: input.status === "COMPLETED" ? new Date() : null,
-      archivedAt: input.status === "ARCHIVED" ? new Date() : null,
-    },
-    select: { id: true },
+  return prisma.$transaction(async (tx) => {
+    // Inside the transaction, so the goal cannot be deleted between the check
+    // and the insert — and so a foreign goal id is rejected rather than stored.
+    if (input.goalId) await assertGoalOwned(tx, userId, input.goalId);
+
+    return tx.project.create({
+      data: {
+        userId,
+        goalId: input.goalId,
+        name: input.name,
+        description: input.description,
+        color: input.color,
+        priority: input.priority,
+        status: input.status,
+        startDate: input.startDate ? localDateToDbDate(input.startDate) : null,
+        dueDate: input.dueDate ? localDateToDbDate(input.dueDate) : null,
+        completedAt: input.status === "COMPLETED" ? new Date() : null,
+        archivedAt: input.status === "ARCHIVED" ? new Date() : null,
+      },
+      select: { id: true },
+    });
   });
 }
 
@@ -64,9 +72,12 @@ export async function updateProject(
     });
     if (!current) throw new NotFoundError("That project could not be found.");
 
+    if (input.goalId) await assertGoalOwned(tx, userId, input.goalId);
+
     await tx.project.updateMany({
       where: { id: projectId, userId },
       data: {
+        goalId: input.goalId,
         name: input.name,
         description: input.description,
         color: input.color,

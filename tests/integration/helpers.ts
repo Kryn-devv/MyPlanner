@@ -107,6 +107,7 @@ export async function createTestProject(
     priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
     dueDate: Date | null;
     color: string;
+    goalId: string | null;
   }> = {},
 ) {
   return db.project.create({
@@ -117,8 +118,38 @@ export async function createTestProject(
       priority: overrides.priority ?? "MEDIUM",
       dueDate: overrides.dueDate ?? null,
       color: overrides.color ?? "violet",
+      goalId: overrides.goalId ?? null,
     },
   });
+}
+
+export async function createTestGoal(
+  userId: string,
+  overrides: Partial<{
+    title: string;
+    status: "ACTIVE" | "COMPLETED" | "ARCHIVED";
+    priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    targetDate: Date | null;
+  }> = {},
+) {
+  return db.goal.create({
+    data: {
+      userId,
+      title: overrides.title ?? "Test goal",
+      status: overrides.status ?? "ACTIVE",
+      priority: overrides.priority ?? "MEDIUM",
+      targetDate: overrides.targetDate ?? null,
+    },
+  });
+}
+
+/** Reads a project's goal straight from the database. */
+export async function getProjectGoal(projectId: string) {
+  const row = await db.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { goalId: true },
+  });
+  return row.goalId;
 }
 
 export async function createTestMilestone(

@@ -59,6 +59,7 @@ const projectInput = {
   status: "ARCHIVED" as const,
   startDate: null,
   dueDate: null,
+  goalId: null,
 };
 
 const milestoneInput = { title: "Injected", description: null, dueDate: null };
