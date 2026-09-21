@@ -1,45 +1,54 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { elapsedSeconds, type FocusTiming } from "@/lib/focus/duration";
+import type { FocusTiming } from "@/lib/focus/duration";
 
 /**
  * Elapsed seconds for a live session, ticking once a second.
  *
- * The interval exists only to re-render. It never *adds* to a counter: every
- * tick recomputes the figure from the session's own timestamps, which is why a
- * tab that was throttled, a laptop that slept, or a refresh that dropped the
- * interval entirely all recover the correct time on the very next frame. An
- * `elapsed += 1` timer would be wrong after any of those, and silently.
+ * Anchored to the server, measured locally. `initialElapsed` is the server's
+ * own answer for this render; the browser adds only the time it has measured
+ * *since* that render, never a figure of its own.
+ *
+ * That distinction matters. Computing `clientNow - segmentStartedAt` mixes two
+ * clocks: the start instant was written by the server, so a browser whose
+ * clock is three minutes slow would show 0:00 for the first three minutes and
+ * then trail the server for the rest of the session — and on completing at a
+ * displayed 25:00 the user would be told 28m was tracked. Using a *difference*
+ * between two readings of the same clock cancels any offset out, so the
+ * display agrees with what is banked however wrong the machine's clock is.
+ *
+ * The interval exists only to re-render; nothing accumulates in it. Each tick
+ * recomputes from the anchor, so a throttled tab, a sleeping laptop or a
+ * dropped interval all recover on the very next tick rather than losing the
+ * seconds they missed.
  *
  * A paused or finished session does not tick at all — its figure cannot
  * change, so there is nothing to re-render for.
- *
- * `initialElapsed` is computed once on the server and passed in, rather than
- * being read from the browser's clock on the first render. Reading it here
- * would mean the server rendered one second and the client hydrated with
- * another, which React reports as a hydration mismatch — reliably, since a
- * running timer changes between the two. Seeding from a value both sides agree
- * on removes the mismatch without showing a wrong number first.
  */
 export function useFocusElapsed(timing: FocusTiming, initialElapsed: number): number {
   const [elapsed, setElapsed] = useState(initialElapsed);
 
   const running = timing.status === "RUNNING" && timing.segmentStartedAt !== null;
-  const { accumulatedSeconds, segmentStartedAt, status } = timing;
 
   useEffect(() => {
-    // Recompute immediately: the state above was seeded on the first render,
-    // and for a server-rendered page that was a moment ago.
-    setElapsed(elapsedSeconds({ status, accumulatedSeconds, segmentStartedAt }, new Date()));
+    // Re-anchor whenever the server sends a new figure — after a pause, a
+    // resume, or any refresh. Without this the display would keep counting
+    // from a stale baseline.
+    setElapsed(initialElapsed);
     if (!running) return;
 
+    // Read once, then only ever subtract: this is a stopwatch, not a clock, so
+    // the absolute value is irrelevant and any offset cancels.
+    const anchor = Date.now();
+
     const id = setInterval(() => {
-      setElapsed(elapsedSeconds({ status, accumulatedSeconds, segmentStartedAt }, new Date()));
+      const sinceAnchor = Math.max(0, Math.floor((Date.now() - anchor) / 1000));
+      setElapsed(initialElapsed + sinceAnchor);
     }, 1000);
 
     return () => clearInterval(id);
-  }, [running, status, accumulatedSeconds, segmentStartedAt]);
+  }, [running, initialElapsed]);
 
   return elapsed;
 }
