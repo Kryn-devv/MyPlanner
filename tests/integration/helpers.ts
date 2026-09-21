@@ -57,8 +57,11 @@ export async function createTestTask(
     xpReward: number;
     dueDate: Date | null;
     dueTime: string | null;
+    estimatedMinutes: number | null;
     categoryId: string | null;
     completed: boolean;
+    /** Overrides the completion instant, for day-window tests. */
+    completedAt: Date | null;
     projectId: string | null;
     milestoneId: string | null;
   }> = {},
@@ -72,8 +75,9 @@ export async function createTestTask(
       dueDate: overrides.dueDate ?? null,
       dueTime: overrides.dueTime ?? null,
       categoryId: overrides.categoryId ?? null,
+      estimatedMinutes: overrides.estimatedMinutes ?? null,
       completed: overrides.completed ?? false,
-      completedAt: overrides.completed ? new Date() : null,
+      completedAt: overrides.completedAt ?? (overrides.completed ? new Date() : null),
       completionCount: overrides.completed ? 1 : 0,
       projectId: overrides.projectId ?? null,
       milestoneId: overrides.milestoneId ?? null,
