@@ -119,6 +119,7 @@ export default async function TasksPage({
 
       <TaskList
         tasks={tasks}
+        showFocus
         emptyIcon={<ListTodo />}
         emptyTitle={
           search || categoryId || priority || projectId || status !== "open"

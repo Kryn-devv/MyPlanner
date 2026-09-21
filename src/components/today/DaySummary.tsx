@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flame } from "lucide-react";
 import { formatDuration } from "@/lib/datetime";
+import { formatTrackedTime } from "@/lib/focus/duration";
 import type { DayProgress, DayRelation, Workload } from "@/lib/today/logic";
 import type { DayGoalFocus } from "@/lib/today/types";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -23,6 +24,7 @@ export function DaySummary({
   focus,
   relation,
   overdueCount,
+  trackedFocusSeconds,
 }: {
   progress: DayProgress;
   workload: Workload;
@@ -31,6 +33,7 @@ export function DaySummary({
   focus: readonly DayGoalFocus[];
   relation: DayRelation;
   overdueCount: number;
+  trackedFocusSeconds: number;
 }) {
   const label = progress.isEmpty
     ? "Nothing scheduled"
@@ -84,6 +87,16 @@ export function DaySummary({
             <dd className="text-ink-faint">
               <span className="tnum">{workload.unestimated}</span> unestimated
             </dd>
+          </div>
+        )}
+
+        {trackedFocusSeconds > 0 && (
+          <div className="flex items-baseline gap-1.5">
+            {/* "Tracked focus" rather than "actual": this counts the time put
+                through a focus session, which is not the same claim as how
+                long the day's work really took. */}
+            <dt className="text-ink-faint">Tracked focus</dt>
+            <dd className="tnum text-ink">{formatTrackedTime(trackedFocusSeconds)}</dd>
           </div>
         )}
 

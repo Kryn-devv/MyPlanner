@@ -33,6 +33,10 @@ export interface TaskListProps {
   hideProject?: boolean;
   /** Omits the edit/delete menu on read-only dashboard panels. */
   readOnly?: boolean;
+  /** Shows a Focus button on each open task. */
+  showFocus?: boolean;
+  /** Tracked focus seconds per task id, for pages that fetched the aggregate. */
+  trackedByTask?: ReadonlyMap<string, number>;
   className?: string;
 }
 
@@ -46,6 +50,8 @@ export function TaskList({
   groupedByDate = null,
   hideProject = false,
   readOnly = false,
+  showFocus = false,
+  trackedByTask,
   className,
 }: TaskListProps) {
   const { toggle, openEdit, requestDelete, today } = useTaskDialogs();
@@ -93,6 +99,8 @@ export function TaskList({
             onEdit={readOnly ? undefined : openEdit}
             onDelete={readOnly ? undefined : requestDelete}
             groupedByDate={groupedByDate}
+            showFocus={showFocus}
+            trackedSeconds={trackedByTask?.get(task.id) ?? 0}
             hideProject={hideProject}
           />
         ))}

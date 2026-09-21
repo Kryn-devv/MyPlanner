@@ -12,6 +12,7 @@ import {
   dbDateToLocalDate,
   type LocalDate,
 } from "@/lib/datetime";
+import { getFocusSecondsByTask, getTrackedFocusSeconds } from "@/lib/focus/queries";
 import { prisma } from "@/lib/prisma";
 import { getDisplayStreak, isStreakAtRisk } from "@/lib/streak";
 import {
@@ -170,6 +171,11 @@ export interface TodayData {
   readonly upcoming: CappedTasks;
   readonly unscheduled: CappedTasks;
 
+  /** Completed focus seconds recorded on the selected day. */
+  readonly trackedFocusSeconds: number;
+  /** Tracked focus per task, for the day's rows. Completed sessions only. */
+  readonly trackedByTask: ReadonlyMap<string, number>;
+
   /** Signed sum of the XP ledger for the selected day. Read-only. */
   readonly xpEarned: number;
   readonly streak: { readonly current: number; readonly atRisk: boolean };
@@ -245,6 +251,7 @@ export async function getTodayData(
     unscheduledCount,
     xp,
     stats,
+    trackedFocusSeconds,
   ] = await Promise.all([
     prisma.task.findMany({
       where: { userId, dueDate: selectedDb },
@@ -321,12 +328,21 @@ export async function getTodayData(
       where: { userId },
       select: { currentStreak: true, longestStreak: true, lastCompletedDate: true },
     }),
+
+    // Focus is recorded, not derived: this is the one figure on the page that
+    // says what was actually tracked rather than what was planned.
+    getTrackedFocusSeconds(userId, dayStart, dayEnd),
   ]);
 
   const toView = (rows: TodayTaskRow[]): TodayTask[] =>
     sortTodayTasks(rows.map((row) => toTodayTask(row, today)));
 
   const dayTasks = toView(dayRows);
+  // One grouped aggregate for the whole day rather than a query per row.
+  const trackedByTask = await getFocusSecondsByTask(
+    userId,
+    dayTasks.map((task) => task.id),
+  );
 
   let total = 0;
   let completedCount = 0;
@@ -376,6 +392,9 @@ export async function getTodayData(
     ),
     upcoming: capped(toView(upcomingRows), upcomingCount),
     unscheduled: capped(toView(unscheduledRows), unscheduledCount),
+
+    trackedFocusSeconds,
+    trackedByTask,
 
     xpEarned: xp._sum.amount ?? 0,
     // Reused, never recomputed: the streak has one implementation.

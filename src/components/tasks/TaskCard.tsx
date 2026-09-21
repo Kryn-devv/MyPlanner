@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { CalendarClock, Clock3, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { CalendarClock, Clock3, MoreHorizontal, Pencil, Timer, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatRelativeDay, formatTime, type LocalDate } from "@/lib/datetime";
@@ -12,6 +12,8 @@ import { CategoryBadge } from "./CategoryBadge";
 import { PriorityBadge, PriorityRail } from "./PriorityBadge";
 import { TaskCheckbox } from "./TaskCheckbox";
 import { XpBadge } from "@/components/xp/XpBadge";
+import { FocusButton } from "@/components/focus/FocusButton";
+import { formatTrackedTime } from "@/lib/focus/duration";
 
 /**
  * A single task row.
@@ -42,6 +44,10 @@ export interface TaskCardProps {
   groupedByDate?: LocalDate | null;
   /** Hides the project chip where the surrounding context already states it. */
   hideProject?: boolean;
+  /** Off on read-only panels, where a row is a summary rather than a control. */
+  showFocus?: boolean;
+  /** Completed focus seconds recorded against this task, when the page has them. */
+  trackedSeconds?: number;
   className?: string;
 }
 
@@ -54,6 +60,8 @@ export function TaskCard({
   onDelete,
   groupedByDate = null,
   hideProject = false,
+  showFocus = false,
+  trackedSeconds = 0,
   className,
 }: TaskCardProps) {
   const reduceMotion = useReducedMotion();
@@ -146,7 +154,29 @@ export function TaskCard({
             </span>
           )}
 
+          {trackedSeconds > 0 && (
+            // Sits beside the estimate on purpose: one is what was planned,
+            // the other what was recorded, and reading them together is the
+            // whole point of tracking focus.
+            <span className="inline-flex items-center gap-1 rounded-full border border-accent/20 bg-accent/5 px-2 py-0.5 text-[0.6875rem] font-medium text-accent-strong">
+              <Timer className="h-2.5 w-2.5" aria-hidden="true" />
+              <span className="sr-only">Tracked focus </span>
+              {formatTrackedTime(trackedSeconds)}
+            </span>
+          )}
+
           <XpBadge amount={task.xpReward} muted={task.completed} />
+
+          {/* One button, defined once, on every task row in the app. It calls
+              the shared focus action — Today and the project pages add no
+              focus logic of their own. */}
+          {showFocus && (
+            <FocusButton
+              taskId={task.id}
+              taskTitle={task.title}
+              completed={task.completed}
+            />
+          )}
         </div>
       </div>
 

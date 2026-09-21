@@ -100,6 +100,7 @@ export function ProjectTaskSection({
         <TaskList
           tasks={tasks}
           hideProject
+          showFocus
           emptyIcon={<ListChecks />}
           emptyTitle={filter === "all" ? "No tasks in this project." : "No tasks match this filter."}
           emptyDescription={

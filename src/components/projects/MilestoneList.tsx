@@ -236,7 +236,7 @@ function MilestoneCard({
             />
           ) : (
             <>
-              <TaskList tasks={tasks} hideProject />
+              <TaskList tasks={tasks} hideProject showFocus />
               <div className="mt-2 flex justify-start">
                 <Button
                   variant="ghost"

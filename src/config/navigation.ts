@@ -95,13 +95,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         phase: 2,
         summary: "The things you want to do repeatedly, tracked over time.",
       },
-      {
-        label: "Focus",
-        href: "/app/focus",
-        icon: Timer,
-        phase: 2,
-        summary: "Timed deep-work sessions that log against your tasks.",
-      },
+      // Phase 4.3: timed sessions recorded against the task being worked on.
+      { label: "Focus", href: "/app/focus", icon: Timer, phase: 1 },
       {
         label: "Meetings",
         href: "/app/meetings",

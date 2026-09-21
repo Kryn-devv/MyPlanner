@@ -99,6 +99,7 @@ export default async function TodayPage({
         focus={focus}
         relation={data.relation}
         overdueCount={overdue.total}
+        trackedFocusSeconds={data.trackedFocusSeconds}
       />
 
       {overdue.total > 0 && (
@@ -117,7 +118,7 @@ export default async function TodayPage({
               here runs exactly the completion, XP and streak logic that the
               task page does. The original due date is shown: it is the whole
               point of the section. */}
-          <TaskList tasks={overdue.tasks} />
+          <TaskList tasks={overdue.tasks} showFocus trackedByTask={data.trackedByTask} />
           {overdue.truncated && (
             <p className="text-[0.8125rem] text-ink-faint">
               Showing {overdue.tasks.length} of {overdue.total}.{" "}
@@ -135,13 +136,23 @@ export default async function TodayPage({
 
       {sections.timed.length > 0 && (
         <TodaySection id="timed" title="At a time" count={sections.timed.length}>
-          <TaskList tasks={sections.timed} groupedByDate={selectedDate} />
+          <TaskList
+            tasks={sections.timed}
+            groupedByDate={selectedDate}
+            showFocus
+            trackedByTask={data.trackedByTask}
+          />
         </TodaySection>
       )}
 
       {sections.allDay.length > 0 && (
         <TodaySection id="allday" title="All day" count={sections.allDay.length}>
-          <TaskList tasks={sections.allDay} groupedByDate={selectedDate} />
+          <TaskList
+            tasks={sections.allDay}
+            groupedByDate={selectedDate}
+            showFocus
+            trackedByTask={data.trackedByTask}
+          />
         </TodaySection>
       )}
 
@@ -194,7 +205,11 @@ export default async function TodayPage({
           title={isToday ? "Completed today" : "Completed"}
           count={sections.completed.length}
         >
-          <TaskList tasks={sections.completed} groupedByDate={selectedDate} />
+          <TaskList
+            tasks={sections.completed}
+            groupedByDate={selectedDate}
+            trackedByTask={data.trackedByTask}
+          />
         </TodaySection>
       )}
 
