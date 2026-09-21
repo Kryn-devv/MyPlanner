@@ -3,6 +3,7 @@ import {
   BarChart3,
   CalendarDays,
   CheckSquare,
+  Sun,
   Clock,
   Flag,
   FolderKanban,
@@ -52,6 +53,9 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     title: "Plan",
     items: [
       { label: "Dashboard", href: "/app", icon: LayoutDashboard, phase: 1 },
+      // Phase 4.2: the daily execution view. Sits above Tasks because it is
+      // the page you open to start working, where Tasks is the full backlog.
+      { label: "Today", href: "/app/today", icon: Sun, phase: 1 },
       { label: "Tasks", href: "/app/tasks", icon: CheckSquare, phase: 1 },
       {
         label: "Inbox",
@@ -145,6 +149,7 @@ export const SETTINGS_ITEM: NavItem = {
 /** Bottom bar on mobile. Four destinations is the most that stays tappable. */
 export const MOBILE_NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/app", icon: LayoutDashboard, phase: 1 },
+  { label: "Today", href: "/app/today", icon: Sun, phase: 1 },
   { label: "Tasks", href: "/app/tasks", icon: ListChecks, phase: 1 },
   SETTINGS_ITEM,
 ];

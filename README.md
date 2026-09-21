@@ -1,4 +1,4 @@
-# NOVA — Phases 1–4.1
+# NOVA — Phases 1–4.2
 
 > **NOVA** is an internal working name. The brand is not hard-coded anywhere in
 > the source: set `NEXT_PUBLIC_APP_NAME` and it updates across the UI and
@@ -19,17 +19,22 @@ Tasks carry priorities, categories, deadlines and estimates, and feed an
 XP/level/streak progression system. Every level above them is optional: a task
 needs no project, and a project needs no goal.
 
-Above all four sits a **calendar** — a view, not a fifth level. It reads the
-dates that already live on tasks, milestones, projects and goals, and stores
-nothing of its own.
+Two views sit above all four, and neither is a fifth level — both read dates
+that already live on the records, and store nothing of their own:
+
+- **Calendar** (`/app/calendar`) answers *when?* — a month, week, day or
+  timeline over tasks, milestones, projects and goals.
+- **Today** (`/app/today`) answers *what should I actually do now?* — one day's
+  work, what is outstanding from earlier, and how much of it is left.
 
 **Shipped:** authentication, tasks, projects, milestones, goals, progression,
-calendar and timeline.
+calendar, timeline and the Today planner.
 **Not yet:** habits, focus sessions, meetings, notes, analytics, AI planning.
 Those exist as navigation placeholders, and the data model is shaped so they
 can be added without rewriting what is here — Phases 2 and 3 proved that out by
-adding constraints to columns an earlier phase had left in place, and Phase 4.1
-proved it again by shipping a whole surface with **no schema change at all**.
+adding constraints to columns an earlier phase had left in place, and Phases
+4.1 and 4.2 proved it again by shipping two whole surfaces with **no schema
+change at all**.
 
 ---
 
@@ -99,14 +104,15 @@ transactions, and a mocked client would verify none of them.
 `TEST_DATABASE_URL` is reset on every run, so never point it at a database
 holding real data.
 
-Four on-demand browser harnesses cover the signed-in flows end to end against
+Five on-demand browser harnesses cover the signed-in flows end to end against
 a production build — `tests/e2e/verify.mjs` (tasks, XP, streaks, auth),
 `tests/e2e/verify-projects.mjs` (projects, milestones, assignment),
-`tests/e2e/verify-goals.mjs` (goals, project connection, progress) and
+`tests/e2e/verify-goals.mjs` (goals, project connection, progress),
 `tests/e2e/verify-calendar.mjs` (the four calendar views, URL state, filters,
-and that moving a date moves the item). None is part of `npm test`, and
-Playwright is not a project dependency; see the header of any of them to run
-it.
+and that moving a date moves the item) and `tests/e2e/verify-today.mjs` (the
+day's sections, overdue semantics, day navigation, workload and completion
+through the existing XP path). None is part of `npm test`, and Playwright is
+not a project dependency; see the header of any of them to run it.
 
 ## Architecture
 
@@ -114,8 +120,9 @@ it.
 src/
   app/                      routes (App Router)
     (auth)/                 login, signup — redirects away if already signed in
-    app/                    protected shell: dashboard, tasks, projects,
-                            goals, calendar, settings + placeholder routes
+    app/                    protected shell: dashboard, today, tasks,
+                            projects, goals, calendar, settings
+                            + placeholder routes
   components/
     ui/                     Button, Field, Modal, ProgressBar, Toast, States
     layout/                 Sidebar, Topbar, MobileNav, PageHeader, ComingSoon
@@ -124,6 +131,7 @@ src/
     projects/               ProjectCard, ProjectHeader, MilestoneList, forms
     goals/                  GoalCard, GoalHeader, GoalStats, project section
     calendar/               month/week/day/timeline views, toolbar, filters
+    today/                  day navigation, day summary, section headings
     xp/  streaks/  auth/  settings/
   lib/
     auth/                   password (scrypt), sessions, guards, actions
@@ -132,10 +140,12 @@ src/
     goals/                  service, queries, actions, progress
     calendar/               range maths, item ordering, bounded reads (no
                             writes — the calendar owns no data)
+    today/                  day classification, ordering, progress, workload
+                            (no writes — Today owns no data either)
     validation/             hand-rolled, shared by client and server
     leveling.ts  streak.ts  xp.ts  datetime.ts  prisma.ts
   config/                   app name, priorities, categories, colours,
-                            projects, goals, calendar, navigation
+                            projects, goals, calendar, today, navigation
 ```
 
 ### Decisions worth knowing
@@ -234,6 +244,44 @@ queries. Milestones are the interesting case: they carry no `userId` of their
 own, so they are filtered through `project: { userId }` — still in SQL, never
 by loading rows and discarding them afterwards.
 
+**Today is a query, not a plan.** `/app/today` also added no model and no
+migration. A day is the set of tasks whose own `dueDate` is that day, read
+live; there is no `DailyPlan`, no `ScheduleEntry`, no copy of a task. Moving
+work between days means editing that one column on the task, through the form
+that already does it — which is why the page is read-mostly and why it can
+never disagree with the task list.
+
+Its semantics turn on keeping **two dates apart**, and this is the part worth
+knowing:
+
+| | meaning |
+|---|---|
+| `today` | the user's real current date, resolved in their timezone |
+| `selectedDate` | the day on screen, from `?date=`; defaults to `today` |
+
+- **Overdue** is `dueDate < today && !completed` — measured against the *real*
+  current date and nothing else. Browsing to next week therefore never claims
+  a future task is late, and reviewing last Tuesday still tells the truth about
+  what is outstanding *now* (the page says "as of today" when it is not).
+- **The day** is `dueDate == selectedDate`, complete or not — a day's record
+  includes what you finished. The day wins over every other bucket, so a task
+  appears in exactly one section of the page.
+- **Up next** is after the selected day *and* still ahead of now, so the
+  preview never offers a day that has already gone.
+- **Unscheduled** (no `dueDate`) belongs to no day. It is never overdue — not
+  committing to a day is not being late — and never counts towards the day's
+  progress or workload.
+- **Progress** counts only tasks dated the selected day. Overdue work from
+  earlier days is reported beside it, never folded into it, so the bar cannot
+  move without the day's plan changing.
+- **Workload** sums `estimatedMinutes` and says so. There is no time tracking
+  in this app, so nothing on the page is a claim about time actually spent, and
+  tasks with no estimate are counted rather than guessed at.
+
+Completion, XP, streaks and editing on Today all run through the components and
+actions that already own them — the page hands its tasks to the same `TaskList`
+the task page uses. It adds nothing to the write path.
+
 **Calendar dates are computed as strings, never with `Intl`.** The grid is
 built from `"YYYY-MM-DD"` arithmetic and the same fixed month and weekday
 tables the rest of the app uses, and weeks start on Monday by configuration
@@ -259,12 +307,19 @@ rather than rewriting what came before; the one removal in the set is Phase 3
 dropping the unused `Task.goalId` column, which was verified NULL in every row
 and referenced by no code before it went.
 
-Phase 4.1 added no model, no column and no migration: the calendar is built
-entirely from the date columns above.
+Phases 4.1 and 4.2 added no model, no column and no migration: the calendar
+and the Today planner are built entirely from the date columns above.
 
-Routes: `/app` · `/app/tasks` · `/app/projects` · `/app/projects/[projectId]` ·
-`/app/goals` · `/app/goals/[goalId]` · `/app/calendar` · `/app/settings`, plus
-`/login`, `/signup` and the remaining placeholder routes.
+Routes: `/app` · `/app/today` · `/app/tasks` · `/app/projects` ·
+`/app/projects/[projectId]` · `/app/goals` · `/app/goals/[goalId]` ·
+`/app/calendar` · `/app/settings`, plus `/login`, `/signup` and the remaining
+placeholder routes.
+
+Today takes one search param, `date` (a `YYYY-MM-DD` day within a year of
+today). It is validated by round-trip — `2026-02-31` is rejected rather than
+rolling into March — and falls back to today rather than erroring. `/app/today`
+with no parameter always means *now*, whenever it is opened, which is what
+makes it safe to bookmark.
 
 The calendar's state is entirely in its URL — `view` (`month`, `week`, `day`,
 `timeline`), `date` (the anchor day), `kinds` (a comma-separated subset of
@@ -302,8 +357,15 @@ is a matter of flipping its `phase` and replacing one page body.
 - Milestone ordering is stored (`position`) and respected everywhere, but there
   is no drag-to-reorder UI yet; the `reorderMilestones` service and action are
   in place for one.
-- The calendar is read-only: there is no drag-to-reschedule, and dates are
-  changed on the task, project or goal they belong to.
+- The calendar and Today are both read-only with respect to dates: there is no
+  drag-to-reschedule, and a date is changed on the task, project or goal that
+  owns it.
+- Today's progress counts tasks dated the day. The dashboard's own daily figure
+  additionally counts anything finished today that was scheduled for another
+  day, so the two can differ; Today lists that ad-hoc work in its own section
+  and says it does not count towards the day.
+- Today's overdue list and its previews are capped (50, 5 and 5). The page
+  shows the true total beside each, and links out when a cap bites.
 - The calendar shows no all-day *spans*. A project with a start and a due date
   appears as two marks rather than a bar drawn across the weeks between them.
 - Goals have no ordering of their own — they sort by target date, name,

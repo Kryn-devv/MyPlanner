@@ -1,3 +1,5 @@
+import type { Route } from "next";
+import Link from "next/link";
 import { getAccentColor } from "@/config/colors";
 import { MILESTONE_STATUS_CONFIG, PROJECT_STATUS_CONFIG } from "@/config/projects";
 import { cn } from "@/lib/cn";
@@ -67,23 +69,28 @@ export function ProjectChip({
   name,
   color,
   milestone,
+  href,
   className,
 }: {
   name: string;
   color: string;
   milestone?: string | null;
+  /** Makes the chip a link to the project. Omitted where it would self-link. */
+  href?: string;
   className?: string;
 }) {
   const token = getAccentColor(color);
 
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
-        token.badgeClass,
-        className,
-      )}
-    >
+  const chipClass = cn(
+    "inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
+    token.badgeClass,
+    href &&
+      "transition-colors hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+    className,
+  );
+
+  const content = (
+    <>
       <span aria-hidden="true" className={cn("h-1.5 w-1.5 shrink-0 rounded-full", token.dotClass)} />
       <span className="sr-only">Project: </span>
       <span className="truncate">{name}</span>
@@ -96,7 +103,20 @@ export function ProjectChip({
           <span className="truncate opacity-80">{milestone}</span>
         </>
       )}
-    </span>
+    </>
+  );
+
+  // A chip that names a project should be a way to reach it — but it stays a
+  // span where there is nowhere to go, so a non-link never carries link
+  // affordances it cannot honour.
+  return href ? (
+    // Cast for the same reason the calendar's chips do: typed routes cannot
+    // narrow a path assembled at runtime from an id the database returned.
+    <Link href={href as Route} className={chipClass}>
+      {content}
+    </Link>
+  ) : (
+    <span className={chipClass}>{content}</span>
   );
 }
 

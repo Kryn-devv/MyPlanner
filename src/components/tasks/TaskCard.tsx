@@ -30,7 +30,11 @@ export interface TaskCardProps {
   onToggle: (task: TaskView) => void;
   onEdit?: (task: TaskView) => void;
   onDelete?: (task: TaskView) => void;
-  /** Hides the due-date chip on panels that are already grouped by date. */
+  /**
+   * For lists already grouped by date. The day is dropped, but a task with a
+   * clock time keeps it — "grouped by day" and "happens at 09:00" are
+   * different facts, and losing the second one makes a timed list unreadable.
+   */
   hideDueDate?: boolean;
   /** Hides the project chip where the surrounding context already states it. */
   hideProject?: boolean;
@@ -99,7 +103,16 @@ export function TaskCard({
               name={task.project.name}
               color={task.project.color}
               milestone={task.milestone?.title ?? null}
+              href={`/app/projects/${task.project.id}`}
             />
+          )}
+
+          {hideDueDate && task.dueTime && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white/[0.02] px-2 py-0.5 text-[0.6875rem] font-medium text-ink-muted">
+              <Clock3 className="h-2.5 w-2.5" aria-hidden="true" />
+              <span className="sr-only">At </span>
+              <span className="tnum">{formatTime(task.dueTime)}</span>
+            </span>
           )}
 
           {!hideDueDate && task.dueDate && (

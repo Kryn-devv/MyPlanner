@@ -69,8 +69,11 @@ export default async function DashboardPage() {
             <DashboardPanel
               title="Overdue"
               count={data.overdueTasks.length}
-              href="/app/tasks"
-              linkLabel="Manage"
+              // Today is where overdue work is actually worked through, so
+              // the dashboard hands off to it rather than growing its own
+              // version of the same section.
+              href="/app/today"
+              linkLabel="Open Today"
             >
               <TaskList tasks={data.overdueTasks} readOnly />
             </DashboardPanel>
@@ -81,7 +84,8 @@ export default async function DashboardPage() {
             count={
               data.daily.total > 0 ? `${data.daily.completed}/${data.daily.total}` : undefined
             }
-            href="/app/tasks"
+            href="/app/today"
+            linkLabel="Open Today"
           >
             <TaskList
               tasks={data.todayTasks}

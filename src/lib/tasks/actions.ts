@@ -38,10 +38,18 @@ function toErrorState(error: unknown, fallback: string): TaskFormState {
   return { status: "error", errors: { _form: fallback } };
 }
 
-/** Dashboard and task list both show task data, so both are invalidated. */
+/**
+ * Every surface that reads tasks is invalidated together.
+ *
+ * Today and the calendar are both views over the same `dueDate` column, so a
+ * completion or a moved date has to reach them as surely as it reaches the
+ * task list. Missing one is how a page starts showing yesterday's answer.
+ */
 function revalidateTaskViews(): void {
   revalidatePath("/app");
   revalidatePath("/app/tasks");
+  revalidatePath("/app/today");
+  revalidatePath("/app/calendar");
 }
 
 export async function createTaskAction(
