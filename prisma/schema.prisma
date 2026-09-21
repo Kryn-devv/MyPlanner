@@ -85,6 +85,24 @@ enum MilestoneStatus {
   COMPLETED
 }
 
+/// Lifecycle of a period of focused work.
+///
+/// One status rather than a set of booleans: `isRunning`/`isPaused`/`isDone`
+/// can express "running and completed", which is not a thing, and every read
+/// would then have to decide which flag wins. A session is in exactly one of
+/// these four states, and the legal transitions are enumerated in
+/// src/lib/focus/machine.ts.
+///
+/// CANCELLED is kept rather than deleted: discarding the row would lose the
+/// fact that the period happened, and a cancelled session simply does not
+/// count towards focused time.
+enum FocusSessionStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
 /// AWARD adds XP, REVERSAL takes it back when the underlying event is undone.
 /// Storing both as ledger rows keeps the running total auditable instead of
 /// destructively editing history.
@@ -117,6 +135,7 @@ model User {
   goals          Goal[]
   projects       Project[]
   xpTransactions XpTransaction[]
+  focusSessions  FocusSession[]
   stats          UserStats?
 
   @@index([email])
@@ -374,6 +393,7 @@ model Task {
   completedAt DateTime?
 
   xpTransactions XpTransaction[]
+  focusSessions  FocusSession[]
 
   @@index([userId])
   @@index([completed])
@@ -447,4 +467,75 @@ model UserStats {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Focus domain
+// ---------------------------------------------------------------------------
+
+/// A period of focused work, recorded as it happens.
+///
+/// This is the first model in the app that stores *elapsed time*, and the
+/// design turns on one rule: the browser is never the authority. A client can
+/// ask to start, pause, resume, complete or cancel a session; it can never say
+/// how long one lasted. Every duration is derived from timestamps this server
+/// wrote.
+///
+/// Elapsed time is therefore reconstructible from the row alone:
+///
+///   RUNNING   accumulatedSeconds + (now - segmentStartedAt)
+///   PAUSED    accumulatedSeconds
+///   finished  accumulatedSeconds  (banked when the session ended)
+///
+/// which is what makes a refresh, a navigation, a sleeping laptop or a closed
+/// browser harmless — none of them is where the time was being kept.
+///
+/// Note `targetMinutes` is an intention, not a measurement. A 25-minute target
+/// worked for 18 minutes is 18 minutes of focus, and nothing here ever rounds
+/// one up to the other.
+///
+/// At most one session per user may be RUNNING or PAUSED. That is enforced by
+/// a partial unique index created in the Phase 4.3 migration — Prisma's schema
+/// language cannot express a filtered index, so it does not appear below. See
+/// the migration and src/lib/focus/service.ts.
+model FocusSession {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Nullable and SetNull on delete, unlike most of the app's relations: a
+  /// record of time you actually spent should outlive the task it was spent
+  /// on. A detached session still counts towards your history; it just no
+  /// longer says what it was for.
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  taskId String?
+
+  status FocusSessionStatus @default(RUNNING)
+
+  /// The intended length, when the user picked one. Never the actual length.
+  targetMinutes Int?
+
+  /// Seconds banked by segments that have already ended. The only place
+  /// elapsed time is stored, and it is only ever written by the server.
+  accumulatedSeconds Int @default(0)
+
+  /// When the current RUNNING segment began. Null whenever the clock is not
+  /// moving — which is exactly what distinguishes a paused session from a
+  /// running one without consulting `status` twice.
+  segmentStartedAt DateTime?
+
+  /// When the session began. Doubles as the creation timestamp, so there is no
+  /// second column that means the same thing.
+  startedAt DateTime  @default(now())
+  /// When it reached COMPLETED or CANCELLED. Null while it is still live.
+  endedAt   DateTime?
+
+  updatedAt DateTime @updatedAt
+
+  /// "Is anything active for this user?" — the shell asks on every page.
+  @@index([userId, status])
+  /// A task's focus history, and its completed-seconds aggregate.
+  @@index([taskId, status])
+  /// Today's tracked focus: this user's finished sessions in a time window.
+  @@index([userId, endedAt])
 }

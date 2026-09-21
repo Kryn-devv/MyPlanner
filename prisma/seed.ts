@@ -540,6 +540,9 @@ async function seed(): Promise<void> {
   let tasksCompleted = 0;
   const completedDays = new Set<string>();
 
+  /** Task ids by title, so focus sessions can be attached below. */
+  const taskIdsByTitle = new Map<string, string>();
+
   for (const task of TASKS) {
     const isComplete = task.completedDaysAgo !== undefined;
     const completedAt = isComplete ? instant(-(task.completedDaysAgo as number), 14) : null;
@@ -585,6 +588,43 @@ async function seed(): Promise<void> {
       tasksCompleted += 1;
       completedDays.add(day(-(task.completedDaysAgo as number)));
     }
+
+    taskIdsByTitle.set(task.title, created.id);
+  }
+
+  // -- Focus sessions -------------------------------------------------------
+  // A few finished sessions, so a fresh install shows tracked focus beside the
+  // estimates rather than an empty feature. All COMPLETED: seeding a live
+  // session would mean opening the app to a timer nobody started.
+  const FOCUS: readonly { task: string; daysAgo: number; minutes: number; target: number | null }[] = [
+    { task: "Work on IRIS", daysAgo: 0, minutes: 52, target: 45 },
+    { task: "SAT preparation", daysAgo: 0, minutes: 25, target: 25 },
+    { task: "Finish Chemistry notes", daysAgo: 0, minutes: 38, target: 45 },
+    { task: "Implement voice command parser", daysAgo: 1, minutes: 61, target: 60 },
+    { task: "Work on IRIS", daysAgo: 2, minutes: 90, target: 90 },
+  ];
+
+  let focusSeconds = 0;
+  for (const entry of FOCUS) {
+    const id = taskIdsByTitle.get(entry.task);
+    if (!id) continue;
+
+    const endedAt = instant(-entry.daysAgo, 16);
+    const seconds = entry.minutes * 60;
+
+    await prisma.focusSession.create({
+      data: {
+        userId: user.id,
+        taskId: id,
+        status: "COMPLETED",
+        targetMinutes: entry.target,
+        accumulatedSeconds: seconds,
+        segmentStartedAt: null,
+        startedAt: new Date(endedAt.getTime() - seconds * 1000),
+        endedAt,
+      },
+    });
+    focusSeconds += seconds;
   }
 
   // Derive the streak from the days that actually have completions, rather
@@ -616,7 +656,10 @@ async function seed(): Promise<void> {
   console.log(`  Projects  ${PROJECTS.length} (${PROJECTS.reduce((n, p) => n + p.milestones.length, 0)} milestones)`);
   console.log(`  Tasks     ${TASKS.length} (${tasksCompleted} completed)`);
   console.log(`  XP        ${totalXp} — level ${calculateLevel(totalXp)}`);
-  console.log(`  Streak    ${currentStreak} day${currentStreak === 1 ? "" : "s"}\n`);
+  console.log(`  Streak    ${currentStreak} day${currentStreak === 1 ? "" : "s"}`);
+  console.log(
+    `  Focus     ${FOCUS.length} sessions — ${Math.round(focusSeconds / 60)} min tracked\n`,
+  );
   console.log("Remove it again with: npm run db:unseed");
 }
 

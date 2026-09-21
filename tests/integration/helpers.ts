@@ -189,3 +189,55 @@ export async function getAssignment(taskId: string) {
     select: { projectId: true, milestoneId: true },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4.3 fixtures
+// ---------------------------------------------------------------------------
+
+/**
+ * Writes a focus session directly, bypassing the service.
+ *
+ * Used to set up history and to construct states the service would refuse to
+ * create, so the read layer and the state machine can be tested against rows
+ * that already exist rather than only against ones this run produced.
+ */
+export async function createTestFocusSession(
+  userId: string,
+  overrides: Partial<{
+    taskId: string | null;
+    status: "RUNNING" | "PAUSED" | "COMPLETED" | "CANCELLED";
+    accumulatedSeconds: number;
+    segmentStartedAt: Date | null;
+    startedAt: Date;
+    endedAt: Date | null;
+    targetMinutes: number | null;
+  }> = {},
+) {
+  const status = overrides.status ?? "COMPLETED";
+  const startedAt = overrides.startedAt ?? new Date();
+
+  return db.focusSession.create({
+    data: {
+      userId,
+      taskId: overrides.taskId ?? null,
+      status,
+      accumulatedSeconds: overrides.accumulatedSeconds ?? 0,
+      segmentStartedAt:
+        overrides.segmentStartedAt ?? (status === "RUNNING" ? startedAt : null),
+      startedAt,
+      endedAt:
+        overrides.endedAt ?? (status === "COMPLETED" || status === "CANCELLED" ? new Date() : null),
+      targetMinutes: overrides.targetMinutes ?? null,
+    },
+  });
+}
+
+/** Reads a session straight from the database. */
+export async function getFocusSession(sessionId: string) {
+  return db.focusSession.findUniqueOrThrow({ where: { id: sessionId } });
+}
+
+/** Every focus session a user has, oldest first. */
+export async function listFocusSessions(userId: string) {
+  return db.focusSession.findMany({ where: { userId }, orderBy: { startedAt: "asc" } });
+}
