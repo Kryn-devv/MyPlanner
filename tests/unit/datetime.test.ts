@@ -95,6 +95,57 @@ describe("DATE column round-tripping", () => {
   });
 });
 
+describe("localDateTimeToInstant across a DST gap", () => {
+  it("resolves a midnight that never happened forward, not backward", () => {
+    // Santiago springs forward at local midnight: 23:59 on 5 September is
+    // followed by 01:00 on the 6th, so "2026-09-06T00:00" names a time that
+    // does not exist. Settling before the gap would put the start of the 6th
+    // on the 5th, and a day boundary inside the day it closes makes the XP
+    // ledger and the streak disagree about the same completion.
+    const instant = localDateTimeToInstant("2026-09-06", "00:00", "America/Santiago");
+
+    expect(instant.toISOString()).toBe("2026-09-06T04:00:00.000Z");
+    expect(toLocalDate(instant, "America/Santiago")).toBe("2026-09-06");
+  });
+
+  it("gives a day boundary that always reads back as that day", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["America/Santiago", "2026-09-06"],
+      ["America/Havana", "2026-03-08"],
+      ["America/New_York", "2026-03-08"],
+      ["Europe/London", "2026-03-29"],
+      ["Pacific/Auckland", "2026-09-27"],
+      ["Asia/Kolkata", "2026-09-20"],
+      ["UTC", "2026-09-20"],
+    ];
+
+    for (const [timezone, date] of cases) {
+      const start = localDateTimeToInstant(date, "00:00", timezone);
+      expect(toLocalDate(start, timezone)).toBe(date);
+    }
+  });
+
+  it("keeps consecutive day boundaries contiguous and ordered", () => {
+    const first = localDateTimeToInstant("2026-09-05", "00:00", "America/Santiago");
+    const second = localDateTimeToInstant("2026-09-06", "00:00", "America/Santiago");
+    const third = localDateTimeToInstant("2026-09-07", "00:00", "America/Santiago");
+
+    expect(first.getTime()).toBeLessThan(second.getTime());
+    expect(second.getTime()).toBeLessThan(third.getTime());
+    // 6 September is the short day — it begins at 01:00 local, because
+    // midnight never happened — so it is 23 hours long, and the day before it
+    // is still a full 24. Contiguous either way: no instant falls between them.
+    expect(second.getTime() - first.getTime()).toBe(24 * 3_600_000);
+    expect(third.getTime() - second.getTime()).toBe(23 * 3_600_000);
+  });
+
+  it("leaves an unambiguous time exactly where it was", () => {
+    expect(
+      localDateTimeToInstant("2026-09-20", "17:00", "Asia/Kolkata").toISOString(),
+    ).toBe("2026-09-20T11:30:00.000Z");
+  });
+});
+
 describe("localDateTimeToInstant", () => {
   it("interprets wall-clock time in the user's zone", () => {
     expect(localDateTimeToInstant("2026-09-20", "17:00", "UTC").toISOString()).toBe(

@@ -135,21 +135,25 @@ export default async function TodayPage({
 
       {sections.timed.length > 0 && (
         <TodaySection id="timed" title="At a time" count={sections.timed.length}>
-          <TaskList tasks={sections.timed} hideDueDate />
+          <TaskList tasks={sections.timed} groupedByDate={selectedDate} />
         </TodaySection>
       )}
 
       {sections.allDay.length > 0 && (
         <TodaySection id="allday" title="All day" count={sections.allDay.length}>
-          <TaskList tasks={sections.allDay} hideDueDate />
+          <TaskList tasks={sections.allDay} groupedByDate={selectedDate} />
         </TodaySection>
       )}
 
       {!hasDayTasks && (
         <EmptyState
           icon={<CalendarCheck />}
+          // Not lower-cased: the label can be a date like "Thu 24 Sep", and
+          // flattening its case to fit a sentence mangles it.
           title={
-            isToday ? "Nothing scheduled for today" : `Nothing scheduled for ${formatRelativeDay(selectedDate, today).toLowerCase()}`
+            isToday
+              ? "Nothing scheduled for today"
+              : `Nothing scheduled — ${formatRelativeDay(selectedDate, today)}`
           }
           description={
             overdue.total > 0
@@ -158,6 +162,23 @@ export default async function TodayPage({
           }
           action={<QuickAddPrompt label="Add a task" dueDate={selectedDate} />}
         />
+      )}
+
+      {data.dayTruncated && (
+        // The figures above are aggregates over the whole day, so they stay
+        // right even here; only the list is bounded, and saying so is the
+        // difference between a cap and a quiet omission.
+        <p className="text-[0.8125rem] text-ink-faint">
+          Showing the first {sections.timed.length + sections.allDay.length + sections.completed.length}{" "}
+          of {progress.total} tasks for this day. The totals above cover all of them.{" "}
+          <Link
+            href={{ pathname: "/app/tasks", query: { status: "all" } }}
+            className="text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+          >
+            See every task
+          </Link>
+          .
+        </p>
       )}
 
       {progress.isComplete && hasDayTasks && (
@@ -173,7 +194,7 @@ export default async function TodayPage({
           title={isToday ? "Completed today" : "Completed"}
           count={sections.completed.length}
         >
-          <TaskList tasks={sections.completed} hideDueDate />
+          <TaskList tasks={sections.completed} groupedByDate={selectedDate} />
         </TodaySection>
       )}
 
@@ -182,7 +203,7 @@ export default async function TodayPage({
           id="also-completed"
           title="Also finished this day"
           count={alsoCompleted.total}
-          note="Scheduled for another day but finished on this one — it does not count towards this day's total."
+          note="Finished on this day but not scheduled for it — so it does not count towards this day's total."
         >
           <TaskList tasks={alsoCompleted.tasks} />
         </TodaySection>

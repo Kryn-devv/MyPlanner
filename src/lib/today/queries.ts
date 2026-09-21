@@ -1,6 +1,11 @@
 import "server-only";
 
 import {
+  UNSCHEDULED_PREVIEW_COUNT,
+  UPCOMING_PREVIEW_COUNT,
+  UPCOMING_WINDOW_DAYS,
+} from "@/config/today";
+import {
   addDays,
   localDateTimeToInstant,
   localDateToDbDate,
@@ -9,7 +14,17 @@ import {
 } from "@/lib/datetime";
 import { prisma } from "@/lib/prisma";
 import { getDisplayStreak, isStreakAtRisk } from "@/lib/streak";
-import { calculateDailyProgress, calculateWorkload, getDayRelation, isTaskOverdue, splitDaySections, sortTodayTasks, type DayProgress, type DaySections, type Workload } from "./logic";
+import {
+  getDayRelation,
+  isTaskOverdue,
+  progressFromTotals,
+  sortTodayTasks,
+  splitDaySections,
+  workloadFromTotals,
+  type DayProgress,
+  type DaySections,
+  type Workload,
+} from "./logic";
 import type { DayRelation } from "./logic";
 import type { TodayTask } from "./types";
 
@@ -27,13 +42,16 @@ import type { TodayTask } from "./types";
  * with a separate count so the page can say how much it is not showing.
  */
 
-/** Sections are capped, and the page says so when a cap bites. */
+/**
+ * Sections are capped, and the page says so when a cap bites.
+ *
+ * The day's own list is capped too, but its progress and workload come from
+ * aggregates rather than from the rows that loaded — a cap must bound a read,
+ * never quietly change a number.
+ */
 const MAX_DAY_TASKS = 200;
 const MAX_OVERDUE = 50;
 const MAX_ALSO_COMPLETED = 20;
-const UPCOMING_PREVIEW = 5;
-const UPCOMING_WINDOW_DAYS = 7;
-const UNSCHEDULED_PREVIEW = 5;
 
 /**
  * Selected rather than joined wholesale. The extra hop over `TaskView` is the
@@ -142,6 +160,8 @@ export interface TodayData {
   readonly sections: DaySections;
   readonly progress: DayProgress;
   readonly workload: Workload;
+  /** True when the day holds more tasks than the list shows. */
+  readonly dayTruncated: boolean;
 
   /** Outstanding work from other days, late as of the real current date. */
   readonly overdue: CappedTasks;
@@ -156,11 +176,14 @@ export interface TodayData {
 }
 
 /**
- * Everything the Today page renders, in one round trip.
+ * Everything the Today page renders.
  *
- * One function issuing parallel queries rather than each section fetching for
- * itself — the same shape `getDashboardData` uses, and for the same reason: a
- * waterfall of seven sequential queries is what makes a page feel slow.
+ * One function issuing its reads in parallel rather than each section
+ * fetching for itself — the same shape `getDashboardData` uses, and for the
+ * same reason: a waterfall of sequential queries is what makes a page feel
+ * slow. They are dispatched together but share the connection pool, so this
+ * is a small number of bounded, indexed reads rather than literally one round
+ * trip; each one is covered by an existing index on `(userId, ...)`.
  */
 export async function getTodayData(
   userId: string,
@@ -189,12 +212,16 @@ export async function getTodayData(
     dueDate: { lt: todayDb, not: selectedDb },
   } as const;
 
+  // "Finished on this day but not part of it." Written as an explicit OR
+  // rather than `NOT: { dueDate: selectedDb }`: in SQL, `NOT (NULL = x)` is
+  // NULL, not true, so a bare NOT silently drops every dateless task — and a
+  // dateless task finished today would then appear nowhere on the page at all.
   const alsoCompletedWhere = {
     userId,
     completed: true,
     completedAt: { gte: dayStart, lt: dayEnd },
-    NOT: { dueDate: selectedDb },
-  } as const;
+    OR: [{ dueDate: null }, { dueDate: { not: selectedDb } }],
+  };
 
   const upcomingWhere = {
     userId,
@@ -206,6 +233,8 @@ export async function getTodayData(
 
   const [
     dayRows,
+    dayCounts,
+    dayEstimates,
     overdueRows,
     overdueCount,
     alsoCompletedRows,
@@ -220,14 +249,37 @@ export async function getTodayData(
     prisma.task.findMany({
       where: { userId, dueDate: selectedDb },
       select: TODAY_TASK_SELECT,
-      orderBy: [{ dueTime: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ dueTime: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       take: MAX_DAY_TASKS,
+    }),
+
+    // The day's figures come from aggregates, not from the rows above.
+    // Counting the loaded rows would let a cap change a number rather than
+    // bound a read — the same reason project and goal progress are grouped
+    // aggregates rather than loaded lists.
+    prisma.task.groupBy({
+      by: ["completed"],
+      where: { userId, dueDate: selectedDb },
+      _count: { _all: true },
+    }),
+
+    // Estimates are summed separately, filtered to usable ones. A nullable
+    // column that can also hold zero or a negative cannot simply be summed:
+    // the pure rule ignores those, so the aggregate has to as well, or the
+    // page and the tests would disagree about the same day.
+    prisma.task.groupBy({
+      by: ["completed"],
+      where: { userId, dueDate: selectedDb, estimatedMinutes: { gt: 0 } },
+      _count: { _all: true },
+      _sum: { estimatedMinutes: true },
     }),
 
     prisma.task.findMany({
       where: overdueWhere,
       select: TODAY_TASK_SELECT,
-      orderBy: [{ dueDate: "asc" }, { dueTime: "asc" }],
+      // The id breaks every remaining tie, so *which* 50 a capped list shows
+      // cannot vary between two renders of the same data.
+      orderBy: [{ dueDate: "asc" }, { dueTime: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       take: MAX_OVERDUE,
     }),
     prisma.task.count({ where: overdueWhere }),
@@ -235,24 +287,27 @@ export async function getTodayData(
     prisma.task.findMany({
       where: alsoCompletedWhere,
       select: TODAY_TASK_SELECT,
-      orderBy: [{ completedAt: "desc" }],
+      orderBy: [{ completedAt: "desc" }, { id: "asc" }],
       take: MAX_ALSO_COMPLETED,
     }),
     prisma.task.count({ where: alsoCompletedWhere }),
 
+    // Open work only: this is a preview of what is left to do, not a census
+    // of the days ahead. `classifyTask` answers the wider question of which
+    // bucket a task belongs to, including finished ones.
     prisma.task.findMany({
       where: upcomingWhere,
       select: TODAY_TASK_SELECT,
-      orderBy: [{ dueDate: "asc" }, { dueTime: "asc" }],
-      take: UPCOMING_PREVIEW,
+      orderBy: [{ dueDate: "asc" }, { dueTime: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      take: UPCOMING_PREVIEW_COUNT,
     }),
     prisma.task.count({ where: upcomingWhere }),
 
     prisma.task.findMany({
       where: unscheduledWhere,
       select: TODAY_TASK_SELECT,
-      orderBy: [{ createdAt: "asc" }],
-      take: UNSCHEDULED_PREVIEW,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: UNSCHEDULED_PREVIEW_COUNT,
     }),
     prisma.task.count({ where: unscheduledWhere }),
 
@@ -272,6 +327,24 @@ export async function getTodayData(
     sortTodayTasks(rows.map((row) => toTodayTask(row, today)));
 
   const dayTasks = toView(dayRows);
+
+  let total = 0;
+  let completedCount = 0;
+  for (const group of dayCounts) {
+    total += group._count._all;
+    if (group.completed) completedCount += group._count._all;
+  }
+
+  let estimatedCount = 0;
+  let plannedMinutes = 0;
+  let completedMinutes = 0;
+  for (const group of dayEstimates) {
+    const minutes = group._sum.estimatedMinutes ?? 0;
+    estimatedCount += group._count._all;
+    plannedMinutes += minutes;
+    if (group.completed) completedMinutes += minutes;
+  }
+
   const streakState = {
     currentStreak: stats?.currentStreak ?? 0,
     longestStreak: stats?.longestStreak ?? 0,
@@ -285,8 +358,14 @@ export async function getTodayData(
     timezone,
 
     sections: splitDaySections(dayTasks),
-    progress: calculateDailyProgress(dayTasks),
-    workload: calculateWorkload(dayTasks),
+    progress: progressFromTotals({ total, completed: completedCount }),
+    workload: workloadFromTotals({
+      plannedMinutes,
+      completedMinutes,
+      estimatedCount,
+      taskCount: total,
+    }),
+    dayTruncated: total > dayTasks.length,
 
     overdue: capped(toView(overdueRows), overdueCount),
     // Kept in completion order rather than the task ordering: this is a record

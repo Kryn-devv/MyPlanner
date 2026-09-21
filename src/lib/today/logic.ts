@@ -128,6 +128,12 @@ export interface DayProgress {
   readonly isComplete: boolean;
 }
 
+/** The two numbers a day's progress is made of, however they were obtained. */
+export interface DayTotals {
+  readonly total: number;
+  readonly completed: number;
+}
+
 /**
  * Progress for the day being viewed.
  *
@@ -135,10 +141,13 @@ export interface DayProgress {
  * previous days is counted separately and unscheduled work is not counted at
  * all — folding either into the day's total would mean the bar moved without
  * the day's plan changing.
+ *
+ * Takes totals rather than rows so it can be fed from a database aggregate.
+ * The rendered list of a day is capped; its *count* must not be, or a busy
+ * day would quietly report progress against the part that happened to load.
  */
-export function calculateDailyProgress(tasks: readonly TodayTask[]): DayProgress {
-  const total = tasks.length;
-  const completed = tasks.reduce((count, task) => count + (task.completed ? 1 : 0), 0);
+export function progressFromTotals(totals: DayTotals): DayProgress {
+  const { total, completed } = totals;
 
   return {
     total,
@@ -148,6 +157,14 @@ export function calculateDailyProgress(tasks: readonly TodayTask[]): DayProgress
     isEmpty: total === 0,
     isComplete: total > 0 && completed === total,
   };
+}
+
+/** The same rule, counted from rows. This is the definition the tests pin. */
+export function calculateDailyProgress(tasks: readonly TodayTask[]): DayProgress {
+  return progressFromTotals({
+    total: tasks.length,
+    completed: tasks.reduce((count, task) => count + (task.completed ? 1 : 0), 0),
+  });
 }
 
 export interface Workload {
@@ -162,34 +179,59 @@ export interface Workload {
   readonly isEmpty: boolean;
 }
 
+/** The four figures a day's workload is made of. */
+export interface WorkloadTotals {
+  readonly plannedMinutes: number;
+  readonly completedMinutes: number;
+  /** How many of the day's tasks carry a usable estimate. */
+  readonly estimatedCount: number;
+  readonly taskCount: number;
+}
+
 /**
  * Estimated workload for a day.
  *
  * Estimates only. The app has no time tracking, so nothing here is a claim
  * about time actually spent, and the UI says so. Tasks with no estimate
  * contribute nothing and are counted separately rather than being guessed at.
+ *
+ * Totals in, for the same reason progress takes them: the figure has to
+ * describe the whole day, not the part that fitted in the list.
  */
+export function workloadFromTotals(totals: WorkloadTotals): Workload {
+  const { plannedMinutes, completedMinutes, estimatedCount, taskCount } = totals;
+
+  return {
+    planned: plannedMinutes,
+    completed: completedMinutes,
+    remaining: plannedMinutes - completedMinutes,
+    estimated: estimatedCount,
+    unestimated: taskCount - estimatedCount,
+    isEmpty: plannedMinutes === 0,
+  };
+}
+
+/** The same rule, summed from rows. This is the definition the tests pin. */
 export function calculateWorkload(tasks: readonly TodayTask[]): Workload {
-  let planned = 0;
-  let completed = 0;
-  let estimated = 0;
+  let plannedMinutes = 0;
+  let completedMinutes = 0;
+  let estimatedCount = 0;
 
   for (const task of tasks) {
     const minutes = task.estimatedMinutes;
+    // A zero or negative estimate is not information, so it is not trusted.
     if (minutes === null || minutes <= 0) continue;
-    estimated += 1;
-    planned += minutes;
-    if (task.completed) completed += minutes;
+    estimatedCount += 1;
+    plannedMinutes += minutes;
+    if (task.completed) completedMinutes += minutes;
   }
 
-  return {
-    planned,
-    completed,
-    remaining: planned - completed,
-    estimated,
-    unestimated: tasks.length - estimated,
-    isEmpty: planned === 0,
-  };
+  return workloadFromTotals({
+    plannedMinutes,
+    completedMinutes,
+    estimatedCount,
+    taskCount: tasks.length,
+  });
 }
 
 /**

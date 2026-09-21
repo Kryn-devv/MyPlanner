@@ -11,10 +11,12 @@ import { cn } from "@/lib/cn";
 /**
  * Previous day · Today · Next day, plus the way through to the calendar.
  *
- * The day lives in the URL, exactly as the calendar's range does, so a day is
- * a link that survives a refresh and works with the back button. Today itself
- * carries no parameter at all: `/app/today` always means *now*, whenever it is
- * opened, which is what makes it a safe thing to bookmark.
+ * The day lives in the URL, so a day is a link that can be sent and survives a
+ * refresh. Stepping between days pushes history rather than replacing it —
+ * moving to another day is a navigation, and the back button should return to
+ * the day you came from rather than leaving the page. Today itself carries no
+ * parameter at all: `/app/today` always means *now*, whenever it is opened,
+ * which is what makes it a safe thing to bookmark.
  *
  * Date arithmetic goes through the app's pure `addDays`, never through
  * `Date` — a day is a calendar day, and doing this with timestamps is what
@@ -39,7 +41,7 @@ export function TodayDateNav({
     else params.set(TODAY_DATE_PARAM, date);
 
     const query = params.toString();
-    startTransition(() => router.replace(query ? `/app/today?${query}` : "/app/today"));
+    startTransition(() => router.push(query ? `/app/today?${query}` : "/app/today"));
   };
 
   const offset = daysBetween(selectedDate, today);

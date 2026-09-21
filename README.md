@@ -364,8 +364,11 @@ is a matter of flipping its `phase` and replacing one page body.
   additionally counts anything finished today that was scheduled for another
   day, so the two can differ; Today lists that ad-hoc work in its own section
   and says it does not count towards the day.
-- Today's overdue list and its previews are capped (50, 5 and 5). The page
-  shows the true total beside each, and links out when a cap bites.
+- Today's lists are capped — 200 for the day itself, 50 overdue, 5 for each
+  preview — and the page shows the true total beside each, and says so when a
+  cap bites. The day's progress and workload come from database aggregates
+  rather than the loaded rows, so a cap bounds a read without changing a
+  figure.
 - The calendar shows no all-day *spans*. A project with a start and a due date
   appears as two marks rather than a bar drawn across the weeks between them.
 - Goals have no ordering of their own — they sort by target date, name,

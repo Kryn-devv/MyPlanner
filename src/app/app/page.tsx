@@ -89,7 +89,10 @@ export default async function DashboardPage() {
           >
             <TaskList
               tasks={data.todayTasks}
-              hideDueDate
+              // This panel also lists work finished today that was scheduled
+              // for another day, so only the tasks genuinely due today drop
+              // their date.
+              groupedByDate={data.today}
               emptyIcon={hasAnyTask ? <CheckCircle2 /> : <ListTodo />}
               emptyTitle={hasAnyTask ? "Nothing due today" : "No tasks yet"}
               emptyDescription={

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { localDateToDbDate } from "@/lib/datetime";
 import { getCalendarItems } from "@/lib/calendar/queries";
 import { getViewRange } from "@/lib/calendar/range";
@@ -8,6 +8,7 @@ import {
   createTestProject,
   createTestTask,
   createTestUser,
+  db,
   resetDatabase,
   type TestUser,
 } from "./helpers";
@@ -33,6 +34,11 @@ beforeEach(async () => {
   await resetDatabase();
   owner = await createTestUser();
   intruder = await createTestUser();
+});
+
+afterAll(async () => {
+  await resetDatabase();
+  await db.$disconnect();
 });
 
 describe("cross-user reads", () => {

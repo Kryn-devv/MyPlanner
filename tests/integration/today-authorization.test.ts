@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { localDateTimeToInstant, localDateToDbDate } from "@/lib/datetime";
 import { getTodayData } from "@/lib/today/queries";
 import {
@@ -72,6 +72,11 @@ beforeEach(async () => {
   await resetDatabase();
   owner = await createTestUser();
   intruder = await createTestUser();
+});
+
+afterAll(async () => {
+  await resetDatabase();
+  await db.$disconnect();
 });
 
 describe("cross-user isolation", () => {

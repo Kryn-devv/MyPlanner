@@ -4,6 +4,7 @@ import { AnimatePresence } from "framer-motion";
 import { ListChecks } from "lucide-react";
 import { useOptimistic, useTransition, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import type { LocalDate } from "@/lib/datetime";
 import type { TaskView } from "@/lib/tasks/queries";
 import { EmptyState } from "@/components/ui/States";
 import { TaskCard } from "./TaskCard";
@@ -26,7 +27,8 @@ export interface TaskListProps {
   emptyIcon?: ReactNode;
   emptyAction?: ReactNode;
   dense?: boolean;
-  hideDueDate?: boolean;
+  /** The day this list is grouped by; its tasks then show only a time. */
+  groupedByDate?: LocalDate | null;
   /** Hides project chips where the surrounding context already states it. */
   hideProject?: boolean;
   /** Omits the edit/delete menu on read-only dashboard panels. */
@@ -41,7 +43,7 @@ export function TaskList({
   emptyIcon = <ListChecks />,
   emptyAction,
   dense = false,
-  hideDueDate = false,
+  groupedByDate = null,
   hideProject = false,
   readOnly = false,
   className,
@@ -90,7 +92,7 @@ export function TaskList({
             onToggle={handleToggle}
             onEdit={readOnly ? undefined : openEdit}
             onDelete={readOnly ? undefined : requestDelete}
-            hideDueDate={hideDueDate}
+            groupedByDate={groupedByDate}
             hideProject={hideProject}
           />
         ))}

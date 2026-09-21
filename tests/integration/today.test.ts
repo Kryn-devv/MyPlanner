@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { localDateToDbDate, localDateTimeToInstant } from "@/lib/datetime";
 import { getTodayData } from "@/lib/today/queries";
 import {
@@ -77,6 +77,11 @@ describe("the selected day", () => {
     expect(data.overdue.total).toBe(1);
     expect(data.unscheduled.total).toBe(1);
   });
+});
+
+afterAll(async () => {
+  await resetDatabase();
+  await db.$disconnect();
 });
 
 describe("overdue", () => {
@@ -344,6 +349,24 @@ describe("ad-hoc work finished on the day", () => {
     expect(data.overdue.total).toBe(0);
   });
 
+  it("includes a dateless task finished on the day", async () => {
+    // `NOT: { dueDate: X }` would drop this row: in SQL `NOT (NULL = x)` is
+    // NULL, not true. Without the explicit null branch the task appears in no
+    // section at all — not in unscheduled, because it is done.
+    await createTestTask(user.id, {
+      title: "Someday, done today",
+      completed: true,
+      completedAt: localDateTimeToInstant(TODAY, "11:00", "UTC"),
+    });
+
+    const data = await load();
+
+    expect(data.alsoCompleted.tasks.map((t) => t.title)).toEqual(["Someday, done today"]);
+    expect(data.unscheduled.total).toBe(0);
+    // It has no date, so it cannot count towards a day's plan.
+    expect(data.progress.total).toBe(0);
+  });
+
   it("does not repeat a task already in the day section", async () => {
     await createTestTask(user.id, {
       title: "Planned and done",
@@ -356,6 +379,65 @@ describe("ad-hoc work finished on the day", () => {
 
     expect(data.sections.completed.map((t) => t.title)).toEqual(["Planned and done"]);
     expect(data.alsoCompleted.tasks).toEqual([]);
+  });
+});
+
+describe("a capped day still reports honestly", () => {
+  it("counts progress and workload over the whole day, not the loaded rows", async () => {
+    // One more than the 200-row list cap. Progress and workload come from
+    // aggregates, so the cap bounds the read without changing the figures.
+    for (let i = 0; i < 201; i += 1) {
+      await createTestTask(user.id, {
+        title: `Bulk ${i}`,
+        dueDate: d(TODAY),
+        estimatedMinutes: 10,
+        completed: i < 50,
+      });
+    }
+
+    const data = await load();
+
+    expect(data.progress.total).toBe(201);
+    expect(data.progress.completed).toBe(50);
+    expect(data.workload.planned).toBe(2010);
+    expect(data.workload.completed).toBe(500);
+    expect(data.dayTruncated).toBe(true);
+    // The rendered list is still bounded.
+    const shown = data.sections.timed.length + data.sections.allDay.length + data.sections.completed.length;
+    expect(shown).toBe(200);
+  });
+
+  it("is not truncated for an ordinary day", async () => {
+    await createTestTask(user.id, { title: "One", dueDate: d(TODAY) });
+    expect((await load()).dayTruncated).toBe(false);
+  });
+
+  it("ignores a zero or negative estimate exactly as the pure rule does", async () => {
+    await createTestTask(user.id, { title: "Real", dueDate: d(TODAY), estimatedMinutes: 30 });
+    await createTestTask(user.id, { title: "Zero", dueDate: d(TODAY), estimatedMinutes: 0 });
+    await createTestTask(user.id, { title: "Negative", dueDate: d(TODAY), estimatedMinutes: -60 });
+
+    const { workload } = await load();
+
+    expect(workload.planned).toBe(30);
+    expect(workload.estimated).toBe(1);
+    expect(workload.unestimated).toBe(2);
+  });
+});
+
+describe("capped lists are deterministic", () => {
+  it("shows the same 50 overdue tasks on every render", async () => {
+    // All identical but for the id, so only the final tie-break decides which
+    // 50 are shown. Without it the page could differ between two loads.
+    for (let i = 0; i < 60; i += 1) {
+      await createTestTask(user.id, { title: `Tie ${i}`, dueDate: d("2026-09-01") });
+    }
+
+    const first = (await load()).overdue.tasks.map((t) => t.id);
+    const second = (await load()).overdue.tasks.map((t) => t.id);
+
+    expect(first).toHaveLength(50);
+    expect(second).toEqual(first);
   });
 });
 

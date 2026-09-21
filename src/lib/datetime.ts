@@ -124,7 +124,40 @@ export function localDateTimeToInstant(date: LocalDate, time: string | null, tim
   for (let pass = 0; pass < 2; pass++) {
     instant = new Date(naive - getTimezoneOffsetMs(instant, zone));
   }
+
+  // A wall-clock reading inside a spring-forward gap names a time that never
+  // happened, and the loop above settles on the last instant *before* the gap
+  // — which reads back as the previous day when the gap starts at midnight
+  // (America/Santiago, America/Havana). A day boundary that lands inside the
+  // day it is meant to close makes the XP ledger and the streak disagree about
+  // the same completion, so a nonexistent local time resolves forward to the
+  // first instant that does exist instead.
+  if (toLocalDateTime(instant, zone) !== `${date}T${hh}:${mm}`) {
+    const offsetBefore = getTimezoneOffsetMs(new Date(instant.getTime() - HOUR_MS), zone);
+    const offsetAfter = getTimezoneOffsetMs(new Date(instant.getTime() + HOUR_MS), zone);
+    const gap = offsetAfter - offsetBefore;
+    if (gap > 0) return new Date(instant.getTime() + gap);
+  }
+
   return instant;
+}
+
+const HOUR_MS = 3_600_000;
+
+/** `"YYYY-MM-DDTHH:mm"` as the clock in `timezone` reads at `instant`. */
+function toLocalDateTime(instant: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
 
 /** How far `timezone` is ahead of UTC at `instant`, in milliseconds. */

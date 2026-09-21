@@ -31,11 +31,15 @@ export interface TaskCardProps {
   onEdit?: (task: TaskView) => void;
   onDelete?: (task: TaskView) => void;
   /**
-   * For lists already grouped by date. The day is dropped, but a task with a
-   * clock time keeps it — "grouped by day" and "happens at 09:00" are
-   * different facts, and losing the second one makes a timed list unreadable.
+   * The day this list is already grouped by, if any.
+   *
+   * A task due on that day drops its date chip and keeps only its clock time —
+   * "grouped by day" and "happens at 09:00" are different facts, and losing
+   * the second makes a timed list unreadable. A task in the list that is *not*
+   * due that day keeps its full date chip, because a bare "9:00 AM" with no
+   * day attached would say something untrue about it.
    */
-  hideDueDate?: boolean;
+  groupedByDate?: LocalDate | null;
   /** Hides the project chip where the surrounding context already states it. */
   hideProject?: boolean;
   className?: string;
@@ -48,12 +52,14 @@ export function TaskCard({
   onToggle,
   onEdit,
   onDelete,
-  hideDueDate = false,
+  groupedByDate = null,
   hideProject = false,
   className,
 }: TaskCardProps) {
   const reduceMotion = useReducedMotion();
   const isOverdue = !task.completed && task.dueDate !== null && task.dueDate < today;
+  // Only a task actually due on the grouping day may drop its date.
+  const isGrouped = groupedByDate !== null && task.dueDate === groupedByDate;
 
   return (
     <motion.li
@@ -107,7 +113,7 @@ export function TaskCard({
             />
           )}
 
-          {hideDueDate && task.dueTime && (
+          {isGrouped && task.dueTime && (
             <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white/[0.02] px-2 py-0.5 text-[0.6875rem] font-medium text-ink-muted">
               <Clock3 className="h-2.5 w-2.5" aria-hidden="true" />
               <span className="sr-only">At </span>
@@ -115,7 +121,7 @@ export function TaskCard({
             </span>
           )}
 
-          {!hideDueDate && task.dueDate && (
+          {!isGrouped && task.dueDate && (
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
