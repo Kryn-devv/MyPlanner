@@ -425,6 +425,80 @@ describe("a capped day still reports honestly", () => {
   });
 });
 
+describe("tracked focus reaches every section", () => {
+  it("covers overdue rows, not only the day's own tasks", async () => {
+    const { createTestFocusSession } = await import("./helpers");
+    const overdueTask = await createTestTask(user.id, {
+      title: "Late work",
+      dueDate: d("2026-09-15"),
+    });
+    const todayTask = await createTestTask(user.id, { title: "Today work", dueDate: d(TODAY) });
+
+    await createTestFocusSession(user.id, {
+      taskId: overdueTask.id,
+      status: "COMPLETED",
+      accumulatedSeconds: 1800,
+    });
+    await createTestFocusSession(user.id, {
+      taskId: todayTask.id,
+      status: "COMPLETED",
+      accumulatedSeconds: 600,
+    });
+
+    const data = await load();
+
+    // The overdue section renders task rows too; a map built from the day's
+    // tasks alone leaves them permanently at zero.
+    expect(data.trackedByTask.get(overdueTask.id)).toBe(1800);
+    expect(data.trackedByTask.get(todayTask.id)).toBe(600);
+  });
+
+  it("covers ad-hoc work finished on the day", async () => {
+    const { createTestFocusSession } = await import("./helpers");
+    const adHoc = await createTestTask(user.id, {
+      title: "Ad hoc",
+      dueDate: d("2026-09-10"),
+      completed: true,
+      completedAt: localDateTimeToInstant(TODAY, "14:00", "UTC"),
+    });
+    await createTestFocusSession(user.id, {
+      taskId: adHoc.id,
+      status: "COMPLETED",
+      accumulatedSeconds: 900,
+    });
+
+    const data = await load();
+
+    expect(data.alsoCompleted.tasks.map((t) => t.title)).toEqual(["Ad hoc"]);
+    expect(data.trackedByTask.get(adHoc.id)).toBe(900);
+  });
+
+  it("reports the day's own tracked total separately from per-task totals", async () => {
+    const { createTestFocusSession } = await import("./helpers");
+    const task = await createTestTask(user.id, { title: "T", dueDate: d(TODAY) });
+
+    // Finished today: counts towards the day.
+    await createTestFocusSession(user.id, {
+      taskId: task.id,
+      status: "COMPLETED",
+      accumulatedSeconds: 600,
+      endedAt: localDateTimeToInstant(TODAY, "10:00", "UTC"),
+    });
+    // Finished last week on the same task: counts towards the task, not the day.
+    await createTestFocusSession(user.id, {
+      taskId: task.id,
+      status: "COMPLETED",
+      accumulatedSeconds: 3000,
+      endedAt: localDateTimeToInstant("2026-09-14", "10:00", "UTC"),
+    });
+
+    const data = await load();
+
+    expect(data.trackedFocusSeconds).toBe(600);
+    expect(data.trackedByTask.get(task.id)).toBe(3600);
+  });
+});
+
 describe("capped lists are deterministic", () => {
   it("shows the same 50 overdue tasks on every render", async () => {
     // All identical but for the id, so only the final tie-break decides which

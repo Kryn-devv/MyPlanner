@@ -55,6 +55,7 @@ export function FocusBar() {
               segmentStartedAt: active.segmentStartedAt,
             }}
             targetMinutes={active.targetMinutes}
+            initialElapsed={active.elapsedSeconds}
             size="compact"
           />
           {active.targetMinutes !== null && (

@@ -14,9 +14,16 @@ import { elapsedSeconds, type FocusTiming } from "@/lib/focus/duration";
  *
  * A paused or finished session does not tick at all — its figure cannot
  * change, so there is nothing to re-render for.
+ *
+ * `initialElapsed` is computed once on the server and passed in, rather than
+ * being read from the browser's clock on the first render. Reading it here
+ * would mean the server rendered one second and the client hydrated with
+ * another, which React reports as a hydration mismatch — reliably, since a
+ * running timer changes between the two. Seeding from a value both sides agree
+ * on removes the mismatch without showing a wrong number first.
  */
-export function useFocusElapsed(timing: FocusTiming): number {
-  const [elapsed, setElapsed] = useState(() => elapsedSeconds(timing, new Date()));
+export function useFocusElapsed(timing: FocusTiming, initialElapsed: number): number {
+  const [elapsed, setElapsed] = useState(initialElapsed);
 
   const running = timing.status === "RUNNING" && timing.segmentStartedAt !== null;
   const { accumulatedSeconds, segmentStartedAt, status } = timing;

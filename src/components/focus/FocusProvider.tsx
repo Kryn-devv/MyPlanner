@@ -78,6 +78,10 @@ export function FocusProvider({
         const result = await startFocusAction(request.taskId, request.targetMinutes);
         if (result.status === "conflict") {
           setConflict({ ...result.conflict, request });
+          // The server knows about a session this page did not — started in
+          // another tab, or after the shell last rendered. Re-read, so the
+          // focus bar appears instead of the app claiming nothing is running.
+          router.refresh();
           return;
         }
         if (result.status === "error") {

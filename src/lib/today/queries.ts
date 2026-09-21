@@ -338,11 +338,17 @@ export async function getTodayData(
     sortTodayTasks(rows.map((row) => toTodayTask(row, today)));
 
   const dayTasks = toView(dayRows);
-  // One grouped aggregate for the whole day rather than a query per row.
-  const trackedByTask = await getFocusSecondsByTask(
-    userId,
-    dayTasks.map((task) => task.id),
-  );
+  const overdueTasks = toView(overdueRows);
+  const alsoCompletedTasks = alsoCompletedRows.map((row) => toTodayTask(row, today));
+
+  // One grouped aggregate covering every task the page will render — not just
+  // the day's own. The overdue and also-completed sections show task rows too,
+  // and a map built from one section leaves the others permanently at zero.
+  const trackedByTask = await getFocusSecondsByTask(userId, [
+    ...dayTasks.map((task) => task.id),
+    ...overdueTasks.map((task) => task.id),
+    ...alsoCompletedTasks.map((task) => task.id),
+  ]);
 
   let total = 0;
   let completedCount = 0;
@@ -383,13 +389,10 @@ export async function getTodayData(
     }),
     dayTruncated: total > dayTasks.length,
 
-    overdue: capped(toView(overdueRows), overdueCount),
+    overdue: capped(overdueTasks, overdueCount),
     // Kept in completion order rather than the task ordering: this is a record
     // of how the day actually went.
-    alsoCompleted: capped(
-      alsoCompletedRows.map((row) => toTodayTask(row, today)),
-      alsoCompletedCount,
-    ),
+    alsoCompleted: capped(alsoCompletedTasks, alsoCompletedCount),
     upcoming: capped(toView(upcomingRows), upcomingCount),
     unscheduled: capped(toView(unscheduledRows), unscheduledCount),
 

@@ -36,7 +36,12 @@ function wire(page) {
     const t = m.text();
     if (m.type() === "error" && !IGNORABLE.test(t)) consoleErrors.push(t);
     // A hydration mismatch logs as a warning, not an error — catch it too.
-    if (/hydrat|did not match|server rendered/i.test(t)) consoleErrors.push(`HYDRATION: ${t}`);
+    // A production build reports a hydration failure as a *minified* error
+    // — "Minified React error #418" — which contains none of the words a
+    // development build uses. Matching only the prose would have let a real
+    // mismatch through every suite here.
+    if (/hydrat|did not match|server rendered|React error #(418|419|421|423|425)/i.test(t))
+      consoleErrors.push(`HYDRATION: ${t}`);
   });
   page.on("pageerror", (e) => { if (!IGNORABLE.test(e.message)) pageErrors.push(e.message); });
   page.on("response", (r) => {

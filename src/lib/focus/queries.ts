@@ -3,6 +3,7 @@ import "server-only";
 import { TASK_HISTORY_LIMIT } from "@/config/focus";
 import type { FocusSessionStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { elapsedSeconds } from "./duration";
 import { ACTIVE_STATUSES } from "./machine";
 
 /**
@@ -25,6 +26,14 @@ export interface ActiveFocusSession {
   readonly segmentStartedAt: string | null;
   readonly startedAt: string;
   readonly targetMinutes: number | null;
+  /**
+   * Elapsed seconds as of this render, resolved with the server's clock.
+   *
+   * The browser recomputes from `accumulatedSeconds` and `segmentStartedAt`
+   * every second; this exists so its *first* render agrees with the HTML the
+   * server sent, rather than differing by the second that passed in between.
+   */
+  readonly elapsedSeconds: number;
   readonly task: ActiveFocusTask | null;
 }
 
@@ -46,7 +55,10 @@ export interface ActiveFocusTask {
  * `FocusSession` has no project, milestone or goal column, because a second
  * path to the same fact is a second thing that can be wrong.
  */
-export async function getActiveFocusSession(userId: string): Promise<ActiveFocusSession | null> {
+export async function getActiveFocusSession(
+  userId: string,
+  now: Date = new Date(),
+): Promise<ActiveFocusSession | null> {
   const row = await prisma.focusSession.findFirst({
     where: { userId, status: { in: [...ACTIVE_STATUSES] } },
     select: {
@@ -78,13 +90,19 @@ export async function getActiveFocusSession(userId: string): Promise<ActiveFocus
 
   if (!row) return null;
 
+  const segmentStartedAt = row.segmentStartedAt ? row.segmentStartedAt.toISOString() : null;
+
   return {
     id: row.id,
     status: row.status,
     accumulatedSeconds: row.accumulatedSeconds,
-    segmentStartedAt: row.segmentStartedAt ? row.segmentStartedAt.toISOString() : null,
+    segmentStartedAt,
     startedAt: row.startedAt.toISOString(),
     targetMinutes: row.targetMinutes,
+    elapsedSeconds: elapsedSeconds(
+      { status: row.status, accumulatedSeconds: row.accumulatedSeconds, segmentStartedAt },
+      now,
+    ),
     task: row.task
       ? {
           id: row.task.id,

@@ -38,11 +38,21 @@ export function FocusSessionView({
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
+      // Held keys must not fire repeatedly: one press is one action, and
+      // "complete" cannot be taken back.
+      if (event.repeat) return;
+      // Nothing while a request is in flight, so a shortcut cannot race the
+      // button that is already doing the same thing.
+      if (isPending) return;
+
       const target = event.target as HTMLElement | null;
-      const isTyping =
+      // Links are in this list for the same reason buttons are: Enter on a
+      // focused link is that link's activation, and stealing it would both
+      // navigate and end the session.
+      const isInteractive =
         target?.isContentEditable ||
-        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target?.tagName ?? "");
-      if (isTyping) return;
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target?.tagName ?? "");
+      if (isInteractive) return;
       if (document.querySelector("dialog[open]")) return;
 
       if (event.key === " ") {
@@ -56,7 +66,7 @@ export function FocusSessionView({
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [complete, pause, resume, running]);
+  }, [complete, isPending, pause, resume, running]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-16rem)] max-w-xl flex-col items-center justify-center gap-8 py-8 text-center">
@@ -120,6 +130,7 @@ export function FocusSessionView({
           segmentStartedAt: session.segmentStartedAt,
         }}
         targetMinutes={session.targetMinutes}
+        initialElapsed={session.elapsedSeconds}
       />
 
       <div className="flex flex-wrap items-center justify-center gap-2">

@@ -6,7 +6,7 @@ import { NotFoundError } from "@/lib/auth/guard";
 import { prisma } from "@/lib/prisma";
 import { elapsedSeconds, isTrackable } from "./duration";
 import { ActiveSessionConflictError, InvalidTransitionError } from "./errors";
-import { ACTIVE_STATUSES, canTransition, describeRefusal } from "./machine";
+import { ACTIVE_STATUSES, describeRefusal, isTerminalStatus } from "./machine";
 
 /**
  * Focus session writes.
@@ -188,8 +188,11 @@ async function transition(
         where: { id: sessionId, userId },
         select: { status: true },
       });
+      // Whether the session is *finished* is the question here, not whether
+      // this particular move is legal: a concurrent pause leaves a live
+      // session, and telling the user it "has already finished" is false.
       throw new InvalidTransitionError(
-        current && canTransition(current.status, to) ? "wrong-state" : "already-finished",
+        current && isTerminalStatus(current.status) ? "already-finished" : "wrong-state",
       );
     }
 

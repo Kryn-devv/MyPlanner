@@ -391,6 +391,26 @@ describe("the active session query", () => {
     expect(active?.task?.goal).toMatchObject({ id: goal.id, title: "Get into MIT" });
   });
 
+  it("resolves elapsed seconds with the server's clock, for the first render", async () => {
+    const session = await startFocusSession(user.id, { taskId }, T0);
+
+    // The browser recomputes every second, but its *first* render has to match
+    // the HTML the server sent or React reports a hydration mismatch.
+    const active = await getActiveFocusSession(user.id, after(125));
+
+    expect(active?.id).toBe(session.id);
+    expect(active?.elapsedSeconds).toBe(125);
+    expect(active?.accumulatedSeconds).toBe(0);
+  });
+
+  it("reports a paused session's elapsed seconds as what was banked", async () => {
+    const session = await startFocusSession(user.id, { taskId }, T0);
+    await pauseFocusSession(user.id, session.id, after(60));
+
+    // However long the page is left open, a paused figure does not move.
+    expect((await getActiveFocusSession(user.id, after(99_999)))?.elapsedSeconds).toBe(60);
+  });
+
   it("finds a paused session too — paused is still live", async () => {
     const session = await startFocusSession(user.id, { taskId }, T0);
     await pauseFocusSession(user.id, session.id, after(60));

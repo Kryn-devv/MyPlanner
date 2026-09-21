@@ -37,7 +37,12 @@ function wire(page) {
   page.on("console", (m) => {
     const t = m.text();
     if (m.type() === "error" && !IGNORABLE.test(t)) consoleErrors.push(t);
-    if (/hydrat|did not match|server rendered/i.test(t)) consoleErrors.push(`HYDRATION: ${t}`);
+    // A production build reports a hydration failure as a *minified* error
+    // — "Minified React error #418" — which contains none of the words a
+    // development build uses. Matching only the prose would have let a real
+    // mismatch through every suite here.
+    if (/hydrat|did not match|server rendered|React error #(418|419|421|423|425)/i.test(t))
+      consoleErrors.push(`HYDRATION: ${t}`);
   });
   page.on("pageerror", (e) => { if (!IGNORABLE.test(e.message)) pageErrors.push(e.message); });
   page.on("response", (r) => { if (r.status() >= 500) pageErrors.push(`HTTP ${r.status()} ${r.url()}`); });

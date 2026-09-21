@@ -220,7 +220,7 @@ export default async function TodayPage({
           count={alsoCompleted.total}
           note="Finished on this day but not scheduled for it — so it does not count towards this day's total."
         >
-          <TaskList tasks={alsoCompleted.tasks} />
+          <TaskList tasks={alsoCompleted.tasks} trackedByTask={data.trackedByTask} />
         </TodaySection>
       )}
 

@@ -255,6 +255,31 @@ describe("switching under contention", () => {
   });
 });
 
+describe("what a loser of a race is told", () => {
+  it("does not claim a still-live session has finished", async () => {
+    const session = await startFocusSession(user.id, { taskId }, T0);
+
+    // Pause wins; the second request finds a PAUSED — still live — session.
+    const { rejected } = await race([
+      pauseFocusSession(user.id, session.id, after(60)),
+      pauseFocusSession(user.id, session.id, after(60)),
+    ]);
+
+    const error = rejected[0] as InvalidTransitionError;
+    expect(error).toBeInstanceOf(InvalidTransitionError);
+    expect(error.reason).toBe("wrong-state");
+    expect(error.message).not.toMatch(/already finished/i);
+  });
+
+  it("does say so when the session really has finished", async () => {
+    const session = await startFocusSession(user.id, { taskId }, T0);
+    await completeFocusSession(user.id, session.id, after(600));
+
+    const error = await pauseFocusSession(user.id, session.id, after(700)).catch((e) => e);
+    expect((error as InvalidTransitionError).reason).toBe("already-finished");
+  });
+});
+
 describe("pause racing pause", () => {
   it("banks one figure, not two", async () => {
     const session = await startFocusSession(user.id, { taskId }, T0);

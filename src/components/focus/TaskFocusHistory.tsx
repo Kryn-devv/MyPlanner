@@ -24,7 +24,9 @@ export function TaskFocusHistory({
 }) {
   if (history.sessionCount === 0 && estimatedMinutes === null) return null;
 
-  const trackedMinutes = Math.round(history.totalSeconds / 60);
+  // Floored, to match how the total beside it is rendered — rounding here and
+  // flooring there makes the two halves of the same line disagree.
+  const trackedMinutes = Math.floor(history.totalSeconds / 60);
   const difference =
     estimatedMinutes !== null && history.sessionCount > 0
       ? trackedMinutes - estimatedMinutes

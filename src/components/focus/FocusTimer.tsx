@@ -16,13 +16,16 @@ import { useFocusElapsed } from "./useFocusElapsed";
 export function FocusTimer({
   timing,
   targetMinutes,
+  initialElapsed,
   size = "large",
 }: {
   timing: FocusTiming;
   targetMinutes: number | null;
+  /** Server-computed, so the first client render matches the server's HTML. */
+  initialElapsed: number;
   size?: "large" | "compact";
 }) {
-  const elapsed = useFocusElapsed(timing);
+  const elapsed = useFocusElapsed(timing, initialElapsed);
   const progress = targetProgress(elapsed, targetMinutes);
   const paused = timing.status === "PAUSED";
 
