@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { HABIT_FILTERS, type HabitStatusFilter } from "@/config/habits";
 import { requireUser } from "@/lib/auth/guard";
 import { getLocalToday } from "@/lib/datetime";
-import { getHabitStatusCounts, getHabits } from "@/lib/habits/queries";
+import { getHabitStatusCounts, getHabits, getHabitsForDay } from "@/lib/habits/queries";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { HabitFilterBar } from "@/components/habits/HabitFilterBar";
 import { HabitList } from "@/components/habits/HabitList";
@@ -43,13 +43,17 @@ export default async function HabitsPage({
   const search = single("q")?.trim() || null;
   const today = getLocalToday(user.timezone);
 
-  const [habits, counts] = await Promise.all([
+  const [habits, counts, todayHabits] = await Promise.all([
     getHabits(user.id, user.timezone, { status, search }),
     getHabitStatusCounts(user.id),
+    // Deliberately unfiltered: the header states how the day is going, and a
+    // figure derived from the filtered list would say "nothing due today"
+    // while five active habits were in fact waiting behind the Paused tab.
+    getHabitsForDay(user.id, today, today),
   ]);
 
-  const dueToday = habits.filter((habit) => habit.status === "ACTIVE" && habit.due);
-  const keptToday = dueToday.filter((habit) => habit.completed).length;
+  const dueToday = todayHabits.filter((habit) => habit.status === "ACTIVE" && habit.due);
+  const keptToday = dueToday.filter((habit) => habit.satisfied).length;
 
   return (
     <div className="space-y-6">

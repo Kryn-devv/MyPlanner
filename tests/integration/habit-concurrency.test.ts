@@ -5,8 +5,10 @@ import {
   undoHabitCompletion,
   updateHabit,
 } from "@/lib/habits/service";
+import { completeTask } from "@/lib/tasks/service";
 import {
   createTestHabit,
+  createTestTask,
   createTestUser,
   db,
   getHabit,
@@ -124,6 +126,52 @@ describe("ten simultaneous completions of the same day", () => {
     ]);
 
     expect(await expectLedgerConsistent()).toBe(2 * XP);
+  });
+});
+
+describe("a habit against a task", () => {
+  it("keeps the cached total equal to the ledger when both land at once", async () => {
+    // Before Phase 4.4, task completion was the only writer of
+    // `UserStats.totalXp` and could compute it from a read. It is not any
+    // more, and an absolute write would discard whatever the habit's
+    // transaction had just committed.
+    const task = await createTestTask(user.id, { xpReward: 70 });
+
+    await race<unknown>([
+      completeHabit(user.id, habitId, TODAY, TZ, NOW),
+      completeTask(user.id, task.id, TZ, NOW),
+    ]);
+
+    expect(await expectLedgerConsistent()).toBe(XP + 70);
+  });
+
+  it("holds over repeated rounds", async () => {
+    for (let round = 0; round < 6; round += 1) {
+      await resetDatabase();
+      user = await createTestUser();
+      habitId = (await createTestHabit(user.id, { xpReward: XP, startDate: "2026-09-01" })).id;
+      const task = await createTestTask(user.id, { xpReward: 70 });
+
+      await race<unknown>([
+        completeHabit(user.id, habitId, TODAY, TZ, NOW),
+        completeTask(user.id, task.id, TZ, NOW),
+      ]);
+
+      expect(await expectLedgerConsistent()).toBe(XP + 70);
+    }
+  });
+
+  it("leaves the task streak to tasks alone", async () => {
+    const task = await createTestTask(user.id, { xpReward: 70 });
+
+    await race<unknown>([
+      completeHabit(user.id, habitId, TODAY, TZ, NOW),
+      completeTask(user.id, task.id, TZ, NOW),
+    ]);
+
+    const stats = await getStats(user.id);
+    expect(stats.tasksCompleted).toBe(1);
+    expect(stats.currentStreak).toBe(1);
   });
 });
 

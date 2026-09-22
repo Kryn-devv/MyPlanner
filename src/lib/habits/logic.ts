@@ -17,6 +17,13 @@ import { endOfWeek, startOfWeek } from "@/lib/calendar/range";
  *    a Tuesday for a Mon/Wed/Fri habit, any day inside a pause, any day before
  *    the start — is not a miss. It is simply not an occurrence, and the streak
  *    steps over it.
+ *  - **A day you kept always counts.** A schedule says what is *owed*, never
+ *    what was *done*. So a completion credits the streak wherever it falls —
+ *    on a day the habit was later narrowed away from, or on the day you paused
+ *    it. Otherwise pausing a habit on an afternoon you had already ticked
+ *    would quietly delete that day from your record, including from an
+ *    all-time best, which is exactly the rewriting of history this module
+ *    exists to prevent.
  *  - **Today is still open.** A scheduled day that has not been completed yet
  *    does not break anything until it is over, exactly as the task streak
  *    shows yesterday's run at 09:00 rather than a zero.
@@ -100,9 +107,15 @@ export function weeklyProgress(
 /**
  * Whether a week counts as kept, and whether it counts at all.
  *
- * A week is *in scope* when at least one of its days is available — a week
- * spent entirely paused, or before the habit began, is neither kept nor
- * missed. A week in scope is *kept* when its completions reach the target.
+ * A week is *in scope* when at least one of its days was available — a week
+ * spent entirely paused, or wholly before the habit began, is neither kept nor
+ * missed.
+ *
+ * A week that was only partly available is judged against what was actually
+ * possible in it. A five-times-a-week habit paused from Wednesday cannot be
+ * done five times that week, and scoring it against five would turn a holiday
+ * into a failure — the same mistake as counting an unscheduled day as a miss,
+ * one level up.
  */
 function weekOutcome(
   schedule: HabitSchedule,
@@ -110,17 +123,17 @@ function weekOutcome(
   weekStart: LocalDate,
 ): "kept" | "missed" | "out-of-scope" {
   const weekEnd = addDays(weekStart, 6);
-  let available = false;
+  let availableDays = 0;
   for (let day = weekStart; day <= weekEnd; day = addDays(day, 1)) {
-    if (isAvailableOn(schedule, day)) {
-      available = true;
-      break;
-    }
+    if (isAvailableOn(schedule, day)) availableDays += 1;
   }
-  if (!available) return "out-of-scope";
 
   const { done, target } = weeklyProgress(schedule, completions, weekStart);
-  return done >= target ? "kept" : "missed";
+  // A week with nothing available is out of scope — unless something was
+  // actually done in it, which is a fact and outranks the schedule.
+  if (availableDays === 0) return done > 0 ? "kept" : "out-of-scope";
+
+  return done >= Math.min(target, availableDays) ? "kept" : "missed";
 }
 
 export interface HabitStreaks {
@@ -131,6 +144,11 @@ export interface HabitStreaks {
    * gap — the real figure is at least this large and may be larger.
    */
   readonly currentClipped: boolean;
+  /**
+   * The same caveat for the best run: it began at the window edge, so an
+   * older run it continues is not visible from here.
+   */
+  readonly longestClipped: boolean;
 }
 
 /**
@@ -164,37 +182,61 @@ function computeOccurrenceStreaks(
   const floor = schedule.startDate > windowStart ? schedule.startDate : windowStart;
   // A habit that ended is judged as of its last day, not as of today.
   const ceiling = schedule.endDate !== null && schedule.endDate < today ? schedule.endDate : today;
+  // Only a floor that is the window edge hides anything: a floor at the
+  // habit's own start has nothing older to hide.
+  const floorHidesHistory = floor === windowStart;
 
   // -- current: walk backwards from the ceiling to the first gap -------------
   let current = 0;
-  let currentClipped = false;
+  let brokeOnAMiss = false;
   for (let day = ceiling; day >= floor; day = addDays(day, -1)) {
-    if (!isHabitScheduledOnDate(schedule, day)) continue;
+    // A kept day counts before the schedule gets a say; only an *empty* day
+    // has to be an occurrence to matter.
     if (completions.has(day)) {
       current += 1;
-    } else if (day === today) {
+      continue;
+    }
+    if (!isHabitScheduledOnDate(schedule, day)) continue;
+    if (day === today) {
       // Still open — not a miss yet, and not a completion either.
       continue;
-    } else {
-      break;
     }
-    if (day === floor && floor === windowStart) currentClipped = true;
+    brokeOnAMiss = true;
+    break;
   }
+  // The walk ran out of window rather than out of streak, so the figure is a
+  // floor. Checked after the loop, because the last day inside the window is
+  // often not an occurrence and the flag would then never be set.
+  const currentClipped = current > 0 && !brokeOnAMiss && floorHidesHistory;
 
   // -- longest: walk forwards, tracking the best run ------------------------
   let longest = 0;
+  let longestClipped = false;
   let run = 0;
+  // Whether the run in hand reaches back to the first occurrence we can see.
+  let runTouchesFloor = true;
   for (let day = floor; day <= ceiling; day = addDays(day, 1)) {
-    if (!isHabitScheduledOnDate(schedule, day)) continue;
     if (completions.has(day)) {
       run += 1;
-      if (run > longest) longest = run;
-    } else if (day !== today) {
+      if (run > longest) {
+        longest = run;
+        longestClipped = runTouchesFloor && floorHidesHistory;
+      }
+      continue;
+    }
+    if (!isHabitScheduledOnDate(schedule, day)) continue;
+    if (day !== today) {
       run = 0;
+      runTouchesFloor = false;
     }
   }
 
-  return { current, longest: Math.max(longest, current), currentClipped };
+  return {
+    current,
+    longest: Math.max(longest, current),
+    currentClipped,
+    longestClipped: longest >= current ? longestClipped : currentClipped,
+  };
 }
 
 function computeWeeklyStreaks(
@@ -202,15 +244,19 @@ function computeWeeklyStreaks(
   completions: ReadonlySet<LocalDate>,
   today: LocalDate,
 ): HabitStreaks {
+  // The window edge is rounded back to a week boundary so the oldest week is
+  // judged on a complete set of days — the read layer loads from the same
+  // boundary, and judging a half-loaded week would invent a missed one.
   const windowStart = startOfWeek(addDays(today, -(HABIT_HISTORY_DAYS - 1)));
   const startWeek = startOfWeek(schedule.startDate);
   const floor = startWeek > windowStart ? startWeek : windowStart;
   const lastDay = schedule.endDate !== null && schedule.endDate < today ? schedule.endDate : today;
   const ceiling = startOfWeek(lastDay);
+  const floorHidesHistory = floor === windowStart;
 
   // -- current ---------------------------------------------------------------
   let current = 0;
-  let currentClipped = false;
+  let brokeOnAMiss = false;
   for (let week = ceiling; week >= floor; week = addDays(week, -7)) {
     const outcome = weekOutcome(schedule, completions, week);
     if (outcome === "out-of-scope") continue;
@@ -220,26 +266,38 @@ function computeWeeklyStreaks(
       // The current week is still in progress: neutral, not a miss.
       continue;
     } else {
+      brokeOnAMiss = true;
       break;
     }
-    if (week === floor && floor === windowStart) currentClipped = true;
   }
+  const currentClipped = current > 0 && !brokeOnAMiss && floorHidesHistory;
 
   // -- longest ---------------------------------------------------------------
   let longest = 0;
+  let longestClipped = false;
   let run = 0;
+  let runTouchesFloor = true;
   for (let week = floor; week <= ceiling; week = addDays(week, 7)) {
     const outcome = weekOutcome(schedule, completions, week);
     if (outcome === "out-of-scope") continue;
     if (outcome === "kept") {
       run += 1;
-      if (run > longest) longest = run;
+      if (run > longest) {
+        longest = run;
+        longestClipped = runTouchesFloor && floorHidesHistory;
+      }
     } else if (!(week === ceiling && lastDay === today)) {
       run = 0;
+      runTouchesFloor = false;
     }
   }
 
-  return { current, longest: Math.max(longest, current), currentClipped };
+  return {
+    current,
+    longest: Math.max(longest, current),
+    currentClipped,
+    longestClipped: longest >= current ? longestClipped : currentClipped,
+  };
 }
 
 export interface CompletionRate {
@@ -270,6 +328,10 @@ export function completionRate(
 
   if (schedule.frequency === "WEEKLY") {
     for (let week = startOfWeek(from); week <= to; week = addDays(week, 7)) {
+      // Whole weeks only: a week that began before the range would be judged
+      // on days outside it, so "the last 30 days" could be dragged down by a
+      // week five weeks back.
+      if (week < from) continue;
       const outcome = weekOutcome(schedule, completions, week);
       if (outcome === "out-of-scope") continue;
       const inProgress = week === startOfWeek(today) && to >= today;
@@ -282,13 +344,13 @@ export function completionRate(
     }
   } else {
     for (let day = from; day <= to; day = addDays(day, 1)) {
-      if (!isHabitScheduledOnDate(schedule, day)) continue;
       if (completions.has(day)) {
         scheduled += 1;
         completed += 1;
-      } else if (day !== today) {
-        scheduled += 1;
+        continue;
       }
+      if (!isHabitScheduledOnDate(schedule, day)) continue;
+      if (day !== today) scheduled += 1;
     }
   }
 
@@ -318,22 +380,33 @@ export function dayState(
   return "missed";
 }
 
-/** The number of days a pause has been open, for the paused-habit notice. */
+/**
+ * How many days the open pause covers, counting inclusively.
+ *
+ * The day you pause is already a day the habit is not due, so that day counts
+ * as one — "paused for 0 days" would be a strange thing to read on a habit
+ * that is, right now, paused.
+ */
 export function pausedFor(schedule: HabitSchedule, today: LocalDate): number | null {
   const open = schedule.pauses.find((pause) => pause.end === null);
-  return open ? Math.max(0, daysBetween(today, open.start)) : null;
+  return open ? Math.max(0, daysBetween(today, open.start)) + 1 : null;
 }
 
 /**
- * A stable order for habit lists: what is due and still open first, then done,
- * then everything not due today; names break ties so the order is total.
+ * A stable order for habit lists: what is due and still outstanding first,
+ * then what is settled for the day, then everything not due; names break ties
+ * so the order is total.
+ *
+ * "Settled" rather than "ticked today", because a three-times-a-week habit
+ * already done three times this week is not outstanding on Thursday, and
+ * sorting it to the top as unfinished work would be a lie.
  */
 export function compareHabitsForDay<T extends { name: string; id: string }>(
-  a: T & { due: boolean; completed: boolean },
-  b: T & { due: boolean; completed: boolean },
+  a: T & { due: boolean; satisfied: boolean },
+  b: T & { due: boolean; satisfied: boolean },
 ): number {
-  const rank = (habit: { due: boolean; completed: boolean }) =>
-    habit.due && !habit.completed ? 0 : habit.due && habit.completed ? 1 : 2;
+  const rank = (habit: { due: boolean; satisfied: boolean }) =>
+    habit.due && !habit.satisfied ? 0 : habit.due && habit.satisfied ? 1 : 2;
   const delta = rank(a) - rank(b);
   if (delta !== 0) return delta;
   if (a.name !== b.name) return a.name.localeCompare(b.name);

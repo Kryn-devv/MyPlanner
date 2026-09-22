@@ -145,9 +145,14 @@ async function applyXpDelta(
     data: { totalXp: { increment: delta } },
     select: { totalXp: true },
   });
-  const totalXp = Math.max(0, moved.totalXp);
+  const totalXp = moved.totalXp;
   const level = calculateLevel(totalXp);
-  await tx.userStats.update({ where: { userId }, data: { totalXp, level } });
+  // Only the level is written back. Writing `totalXp` again would put an
+  // absolute value on top of the atomic increment — the very thing the
+  // increment is here to avoid — and a clamp would turn a cache that had
+  // somehow gone negative into a silently different wrong number rather than
+  // leaving the discrepancy visible against the ledger.
+  await tx.userStats.update({ where: { userId }, data: { level } });
   return { previousLevel: before.level, totalXp, level };
 }
 
@@ -232,7 +237,7 @@ export async function setHabitStatus(
   return prisma.$transaction(async (tx) => {
     const current = await tx.habit.findFirst({
       where: { id: habitId, userId },
-      select: { status: true },
+      select: { id: true, status: true },
     });
     if (!current) throw new NotFoundError("That habit could not be found.");
     if (current.status === target) return { changed: false, status: target };
@@ -241,7 +246,9 @@ export async function setHabitStatus(
     // The expected status in the WHERE is what makes this safe under
     // concurrency: a second request finds the row already moved on.
     const swap = await tx.habit.updateMany({
-      where: { id: habitId, userId, status: current.status },
+      // `current.id` rather than the caller's value: from here on the id is
+      // the scalar the database returned, not whatever arrived in the request.
+      where: { id: current.id, userId, status: current.status },
       data: {
         status: target,
         archivedAt: target === "ARCHIVED" ? now : target === "ACTIVE" ? null : undefined,
@@ -252,12 +259,16 @@ export async function setHabitStatus(
     if (current.status === "ACTIVE") {
       // Becoming unavailable: open a pause from today.
       await tx.habitPause.create({
-        data: { habitId, startDate: localDateToDbDate(today) },
+        data: { habitId: current.id, startDate: localDateToDbDate(today) },
       });
     } else if (target === "ACTIVE") {
       // Becoming available again: close the open pause at yesterday.
       const open = await tx.habitPause.findFirst({
-        where: { habitId, endDate: null },
+        // Scoped through the habit as well as by its id. A pause has no owner
+        // column of its own, so the relation is the only thing that ties this
+        // row to the caller — and a query that only names an id is a query
+        // that trusts one.
+        where: { habitId: current.id, habit: { userId }, endDate: null },
         select: { id: true, startDate: true },
       });
       if (open) {
@@ -335,7 +346,7 @@ export async function completeHabit(
     // than a unique-violation error, which in PostgreSQL would abort the
     // transaction and take the stats read below down with it.
     const inserted = await tx.habitCompletion.createManyAndReturn({
-      data: [{ habitId, completedDate: localDateToDbDate(date), completedAt: now }],
+      data: [{ habitId: habit.id, completedDate: localDateToDbDate(date), completedAt: now }],
       skipDuplicates: true,
       select: { id: true },
     });
@@ -397,6 +408,9 @@ export async function completeHabit(
  * REVERSAL. The reversal amount is read from the AWARD row before the delete,
  * so raising a habit's reward later can never claw back more than was given.
  * The ledger rows survive the delete detached (`SetNull`), netting to zero.
+ * That detached row is also why the `(habitCompletionId, kind)` unique key
+ * does not settle concurrent undos — its `habitCompletionId` is NULL, and
+ * PostgreSQL treats NULLs as distinct. The delete count is what settles them.
  */
 export async function undoHabitCompletion(
   userId: string,
@@ -412,7 +426,9 @@ export async function undoHabitCompletion(
       select: { id: true, name: true, status: true },
     });
     if (!habit) throw new NotFoundError("That habit could not be found.");
-    if (habit.status !== "ACTIVE") throw new HabitCompletionError("not-active");
+    // Deliberately no status check. Completing needs an active habit, but
+    // *un*-completing only ever removes a row and gives back the XP it paid
+    // for — refusing it would trap a mis-tick permanently behind a pause.
 
     const noOp = async (): Promise<HabitCompletionOutcome> => {
       const stats = await readXpStats(tx, userId);
@@ -429,7 +445,7 @@ export async function undoHabitCompletion(
     };
 
     const completion = await tx.habitCompletion.findFirst({
-      where: { habitId, completedDate: localDateToDbDate(date) },
+      where: { habitId: habit.id, habit: { userId }, completedDate: localDateToDbDate(date) },
       select: { id: true },
     });
     if (!completion) return noOp();
@@ -439,7 +455,12 @@ export async function undoHabitCompletion(
       select: { amount: true },
     });
 
-    const deleted = await tx.habitCompletion.deleteMany({ where: { id: completion.id } });
+    // Owner-scoped again on the way out: the delete is the compare-and-swap,
+    // and it must not be able to name a row outside the caller's account even
+    // if every read above were somehow wrong.
+    const deleted = await tx.habitCompletion.deleteMany({
+      where: { id: completion.id, habit: { userId } },
+    });
     if (deleted.count === 0) return noOp();
 
     let xpDelta = 0;

@@ -56,6 +56,30 @@ async function requireSession() {
 
 const HABIT_STATUSES: readonly HabitStatus[] = ["ACTIVE", "PAUSED", "ARCHIVED"];
 
+/** cuids are 25 characters; the bound is slack, the type check is the point. */
+const MAX_ID_LENGTH = 64;
+
+/**
+ * True when `value` is something that can be an id.
+ *
+ * TypeScript's `habitId: string` is erased at runtime, and a Server Action's
+ * arguments are JSON the client chose — so without this a caller can send an
+ * object where an id is expected, and Prisma will read it as a *filter*
+ * (`{ gt: "" }` matches every row). Everything downstream then treats that
+ * value as an authorised id. The type check is the whole defence, and it
+ * belongs at the boundary where the untrusted value arrives.
+ */
+function isId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
+
+/** Deliberately the same sentence a missing habit gets: ids stay unenumerable. */
+const NOT_FOUND: HabitFormState = {
+  status: "error",
+  errors: { _form: "That habit could not be found." },
+  message: "That habit could not be found.",
+};
+
 export async function createHabitAction(
   _prev: HabitFormState,
   formData: FormData,
@@ -79,6 +103,7 @@ export async function updateHabitAction(
   formData: FormData,
 ): Promise<HabitFormState> {
   try {
+    if (!isId(habitId)) return NOT_FOUND;
     const user = await requireSession();
     const result = validateHabit(formData, getLocalToday(user.timezone));
     if (!result.ok) return { status: "error", errors: result.errors };
@@ -96,6 +121,7 @@ export async function setHabitStatusAction(
   status: string,
 ): Promise<HabitFormState> {
   try {
+    if (!isId(habitId)) return NOT_FOUND;
     const user = await requireSession();
     if (!(HABIT_STATUSES as readonly string[]).includes(status)) {
       return { status: "error", message: "Choose a valid status." };
@@ -133,6 +159,7 @@ export async function setHabitCompletionAction(
   completed: boolean,
 ): Promise<HabitFormState> {
   try {
+    if (!isId(habitId)) return NOT_FOUND;
     const user = await requireSession();
     if (!isLocalDate(date)) return { status: "error", message: "That is not a valid day." };
 

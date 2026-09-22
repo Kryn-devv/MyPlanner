@@ -56,7 +56,11 @@ export default async function HabitDetailPage({
     {
       icon: Repeat,
       label: "Longest streak",
-      value: String(habit.streaks.longest),
+      // Clipped means the best run reached the edge of the loaded history, so
+      // the true figure is at least this — the same caveat the current streak
+      // carries, and leaving it off here would make a shrinking number look
+      // like a fact.
+      value: `${habit.streaks.longest}${habit.streaks.longestClipped ? "+" : ""}`,
       detail: habit.streaks.longest === 1 ? unit : `${unit}s`,
     },
     {
@@ -106,9 +110,14 @@ export default async function HabitDetailPage({
 
         <HabitHistoryGrid history={habit.history} />
 
+        {/* Named for the window it actually covers. The "All time" figure
+            above is a lifetime count from the database; this one is a rate
+            over the twelve months of history that get loaded, and for a
+            times-per-week habit its unit is the week. */}
         <p className="mt-3 text-[0.75rem] leading-relaxed text-ink-faint">
-          All time: {habit.rateAll.completed} of {habit.rateAll.scheduled} occurrences kept
-          {habit.rateAll.scheduled > 0 && ` (${habit.rateAll.percent}%)`}. Days the habit was not
+          Last 12 months: {habit.rateYear.completed} of {habit.rateYear.scheduled}{" "}
+          {habit.frequency === "WEEKLY" ? "weeks" : "occurrences"} kept
+          {habit.rateYear.scheduled > 0 && ` (${habit.rateYear.percent}%)`}. Days the habit was not
           due, was paused, or had not started yet are not counted as missed.
         </p>
       </section>

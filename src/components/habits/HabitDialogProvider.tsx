@@ -31,8 +31,11 @@ interface HabitDialogContextValue {
   openCreateHabit: () => void;
   openEditHabit: (habit: HabitView) => void;
   setStatus: (habit: HabitView, status: HabitStatus) => void;
-  /** Ticks or unticks one occurrence. `date` is the day being changed. */
-  toggleCompletion: (habit: HabitDayView, next: boolean) => void;
+  /**
+   * Ticks or unticks one occurrence. `onRefused` is called when the server
+   * did not record the change, so an optimistic control can snap back.
+   */
+  toggleCompletion: (habit: HabitDayView, next: boolean, onRefused?: () => void) => void;
   busy: boolean;
 }
 
@@ -81,13 +84,18 @@ export function HabitDialogProvider({ children, today }: { children: ReactNode; 
    * actually written it. `changed: false` means the day was already in that
    * state — a duplicate click, or a second tab — and says nothing, because
    * nothing happened.
+   *
+   * A refusal calls `onRefused`. It has to: the server sends no new data when
+   * it rejects a tick, so a control that re-syncs from its props would keep
+   * showing a completion that was never recorded.
    */
   const toggleCompletion = useCallback(
-    (habit: HabitDayView, next: boolean) => {
+    (habit: HabitDayView, next: boolean, onRefused?: () => void) => {
       startTransition(async () => {
         const result = await setHabitCompletionAction(habit.id, habit.date, next);
 
         if (result.status === "error") {
+          onRefused?.();
           push({
             tone: "error",
             message: result.errors?._form ?? result.message ?? "We could not update that habit.",

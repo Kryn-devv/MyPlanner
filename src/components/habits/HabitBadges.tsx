@@ -108,6 +108,7 @@ export function HabitStreakBadge({
       title={streaks.currentClipped ? "At least this long — older history is not loaded." : undefined}
     >
       <Flame className="h-2.5 w-2.5" aria-hidden="true" />
+      <span className="sr-only">Current streak: </span>
       <span className="tnum">
         {streaks.current}
         {streaks.currentClipped && "+"}

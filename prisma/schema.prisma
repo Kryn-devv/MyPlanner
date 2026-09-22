@@ -465,8 +465,14 @@ model XpTransaction {
   /// The habit completion this entry belongs to, when it came from a habit.
   /// SetNull rather than Cascade: undoing a completion deletes the completion
   /// row, and the ledger is append-only — the AWARD and its REVERSAL both stay,
-  /// detached, netting to zero. The unique below is what makes each completion
-  /// award once and reverse once, however many requests race.
+  /// detached, netting to zero.
+  ///
+  /// The unique below makes each completion *award* once, however many
+  /// requests race. It says nothing about reversals: a REVERSAL is written
+  /// with a NULL habitCompletionId (its completion has just been deleted) and
+  /// PostgreSQL treats NULLs as distinct, so the index does not constrain
+  /// them. What settles concurrent undos is the delete's own row count — one
+  /// transaction deletes the completion, and only that one writes a reversal.
   habitCompletionId String?
   habitCompletion   HabitCompletion? @relation(fields: [habitCompletionId], references: [id], onDelete: SetNull)
 

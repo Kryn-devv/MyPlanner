@@ -101,9 +101,15 @@ async function openDetail(page, name) {
   await page.getByRole("heading", { level: 1 }).waitFor({ state: "visible", timeout: 15000 });
 }
 
-/** The tick for a named habit, wherever it is on the page. */
+/**
+ * The tick for a named habit, wherever it is on the page.
+ *
+ * Keyed on `aria-pressed`, which only the toggle carries: the card's menu
+ * button also names the habit, and a disabled tick says why it is disabled
+ * instead of quoting the name.
+ */
 const tickFor = (page, name) =>
-  page.locator(`[aria-label*="“${name}”"]`).first();
+  page.locator(`button[aria-pressed][aria-label*="${name}"]`).first();
 
 const readTotalXp = async (page) => {
   await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
@@ -258,6 +264,56 @@ try {
   await page.waitForTimeout(2500);
   check("a habit can be un-ticked from the dashboard",
     (await tickFor(page, "Call home").getAttribute("aria-label")).includes("as done"));
+
+  // ===================== REFUSALS =====================
+  section("A refused tick does not lie");
+
+  // A future day cannot be kept in advance, and the control says so rather
+  // than offering a click that the server is certain to reject.
+  await page.goto(`${BASE}/app/today?date=${day(1)}`, { waitUntil: "networkidle" });
+  const tomorrow = tickFor(page, "Call home");
+  check("tomorrow's tick is disabled", !(await tomorrow.isEnabled()));
+  check(
+    "and says why",
+    /not happened yet/i.test((await tomorrow.getAttribute("aria-label")) ?? ""),
+    (await tomorrow.getAttribute("aria-label")) ?? "",
+  );
+
+  // A habit archived in one tab, ticked in another: the server refuses, and
+  // the optimistic tick has to snap back rather than showing a completion
+  // that was never recorded.
+  const staleTab = wire(await ctxA.newPage());
+  await staleTab.goto(`${BASE}/app/habits`, { waitUntil: "networkidle" });
+
+  await page.goto(`${BASE}/app/habits`, { waitUntil: "networkidle" });
+  await openDetail(page, "Call home");
+  await page.getByRole("button", { name: "Archive" }).click();
+  await page.waitForTimeout(2500);
+
+  const stale = tickFor(staleTab, "Call home");
+  await stale.click();
+  await staleTab.waitForTimeout(3000);
+  check(
+    "a refused tick snaps back",
+    (await stale.getAttribute("aria-pressed")) === "false",
+    (await stale.getAttribute("aria-pressed")) ?? "",
+  );
+  check("and says what happened", (await staleTab.locator("body").innerText()).toLowerCase().includes("not active"));
+  await staleTab.close();
+
+  // Put it back for the rest of the suite.
+  await page.getByRole("button", { name: "Restore" }).click();
+  await page.waitForTimeout(2500);
+
+  // ===================== WEEKLY ROLL-UPS =====================
+  section("A weekly target met is not still outstanding");
+  await page.goto(`${BASE}/app/habits`, { waitUntil: "networkidle" });
+  await createHabit(page, { name: "Sunday call", frequency: "Times per week", target: 1, xp: 5 });
+  await tickFor(page, "Sunday call").click();
+  await page.waitForTimeout(2500);
+
+  await page.goto(`${BASE}/app/habits`, { waitUntil: "networkidle" });
+  check("its week reads as met", /1\/1\s*this week/.test(await text(page)));
 
   // ===================== EDITING =====================
   section("Editing changes the future, not the past");

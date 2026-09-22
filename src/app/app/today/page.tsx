@@ -81,7 +81,10 @@ export default async function TodayPage({
   ]);
   const { sections, progress, workload, overdue, alsoCompleted, upcoming, unscheduled } = data;
 
-  const habitsKept = habits.filter((habit) => habit.completed).length;
+  // `satisfied`, not `completed`: a three-times-a-week habit already done
+  // three times this week is not outstanding on Thursday, and counting it as
+  // unkept would nag about work that is finished.
+  const habitsKept = habits.filter((habit) => habit.satisfied).length;
   const focus = deriveDayFocus([...sections.timed, ...sections.allDay, ...sections.completed]);
   const isToday = data.relation === "today";
   const hasDayTasks = progress.total > 0;

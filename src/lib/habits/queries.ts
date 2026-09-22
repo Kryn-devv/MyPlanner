@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import {
   HABIT_HISTORY_DAYS,
   HISTORY_GRID_WEEKS,
@@ -71,6 +73,13 @@ export interface HabitDayView extends HabitView {
   /** Due on this day under its schedule. */
   readonly due: boolean;
   readonly completed: boolean;
+  /**
+   * Nothing left to do for this habit on this day. The same as `completed`
+   * for daily and chosen-day habits; for a times-per-week habit it is also
+   * true once the week's target is met, because it is then not outstanding
+   * on any remaining day of that week.
+   */
+  readonly satisfied: boolean;
   readonly streaks: HabitStreaks;
   /** For WEEKLY habits: this week's count against the target. */
   readonly weekly: { readonly done: number; readonly target: number } | null;
@@ -150,7 +159,11 @@ async function loadCompletionSets(
     where: {
       habit: { userId },
       habitId: { in: [...habitIds] },
-      completedDate: { gte: localDateToDbDate(addDays(today, -(HABIT_HISTORY_DAYS - 1))) },
+      // Rounded back to a week start: the weekly streak walk judges whole
+      // Monday-to-Sunday weeks, and a half-loaded week would read as missed.
+      completedDate: {
+        gte: localDateToDbDate(startOfWeek(addDays(today, -(HABIT_HISTORY_DAYS - 1)))),
+      },
     },
     select: { habitId: true, completedDate: true },
   });
@@ -169,14 +182,17 @@ function toDayView(
   date: LocalDate,
   today: LocalDate,
 ): HabitDayView {
+  const completed = completions.has(date);
+  const weekly = row.frequency === "WEEKLY" ? weeklyProgress(schedule, completions, date) : null;
+
   return {
     ...toView(row, schedule, today),
     date,
     due: isHabitScheduledOnDate(schedule, date),
-    completed: completions.has(date),
+    completed,
+    satisfied: completed || (weekly !== null && weekly.done >= weekly.target),
     streaks: computeHabitStreaks(schedule, completions, today),
-    weekly:
-      row.frequency === "WEEKLY" ? weeklyProgress(schedule, completions, date) : null,
+    weekly,
   };
 }
 
@@ -292,14 +308,22 @@ export interface HabitHistoryWeek {
 
 export interface HabitDetail extends HabitDayView {
   readonly rate30: CompletionRate;
-  readonly rateAll: CompletionRate;
+  /**
+   * The rate across the history window — twelve months, not all time. The
+   * lifetime figure is `completionCount`, which comes from the database.
+   */
+  readonly rateYear: CompletionRate;
   /** Oldest week first, so the grid reads left to right, top to bottom. */
   readonly history: readonly HabitHistoryWeek[];
   readonly recent: readonly { readonly date: LocalDate; readonly completedAt: string }[];
   readonly completionCount: number;
 }
 
-export async function getHabitDetail(
+/**
+ * Wrapped in `cache()` because the detail page reads it twice — once for the
+ * page and once for its metadata — and this is the most expensive read here.
+ */
+export const getHabitDetail = cache(async function getHabitDetail(
   userId: string,
   habitId: string,
   timezone: string,
@@ -346,7 +370,7 @@ export async function getHabitDetail(
   return {
     ...toDayView(row, schedule, done, today, today),
     rate30: completionRate(schedule, done, addDays(today, -29), today, today),
-    rateAll: completionRate(
+    rateYear: completionRate(
       schedule,
       done,
       addDays(today, -(HABIT_HISTORY_DAYS - 1)),
@@ -360,4 +384,4 @@ export async function getHabitDetail(
     })),
     completionCount,
   };
-}
+});

@@ -6,6 +6,7 @@ import {
   getHabits,
   getHabitsForDay,
 } from "@/lib/habits/queries";
+import { setHabitCompletionAction, setHabitStatusAction } from "@/lib/habits/actions";
 import {
   completeHabit,
   setHabitStatus,
@@ -218,6 +219,66 @@ describe("XP stays with its owner", () => {
 
     // Still the stored 25, not the 999 the intruder tried to write.
     expect((await getStats(owner.id)).totalXp).toBe(25);
+  });
+});
+
+/**
+ * A Server Action's arguments are JSON the client chose. TypeScript's
+ * `habitId: string` is erased at runtime, so nothing but an explicit check
+ * stops an object arriving where an id is expected — and Prisma reads an
+ * object as a *filter*, where `{ gt: "" }` matches every row in the table.
+ *
+ * These cases send exactly that, straight into the service, and assert that
+ * another user's data is untouched.
+ */
+describe("an id that is not an id", () => {
+  const FILTER = { gt: "" } as unknown as string;
+
+  it("cannot be used to delete someone else's completion", async () => {
+    await completeHabit(owner.id, ownerHabitId, TODAY, TZ, NOW);
+    // The intruder owns an active habit, so an ownership probe that matches
+    // "any habit of mine" would succeed and authorise the rest of the call.
+    await createTestHabit(intruder.id, { name: "Decoy" });
+
+    await undoHabitCompletion(intruder.id, FILTER, TODAY, NOW).catch(() => undefined);
+
+    expect(await listHabitCompletionDates(ownerHabitId)).toEqual([TODAY]);
+    expect((await getStats(owner.id)).totalXp).toBe(25);
+    // And the intruder minted no reversal against their own ledger either.
+    expect(await getHabitLedgerRows(intruder.id)).toHaveLength(0);
+  });
+
+  it("cannot be used to close someone else's pause", async () => {
+    await setHabitStatus(owner.id, ownerHabitId, "PAUSED", "2026-09-21", NOW);
+    const decoy = await createTestHabit(intruder.id, { name: "Decoy" });
+    await setHabitStatus(intruder.id, decoy.id, "PAUSED", "2026-09-21", NOW);
+
+    await setHabitStatus(intruder.id, FILTER, "ACTIVE", TODAY, NOW).catch(() => undefined);
+
+    const stored = await getHabit(ownerHabitId);
+    expect(stored.status).toBe("PAUSED");
+    expect(stored.pauses).toHaveLength(1);
+    // Still open: a closed pause would turn every paused day into a missed one.
+    expect(stored.pauses[0]?.endDate).toBeNull();
+  });
+
+  it("cannot be used to record a completion on someone else's habit", async () => {
+    await createTestHabit(intruder.id, { name: "Decoy" });
+
+    await completeHabit(intruder.id, FILTER, TODAY, TZ, NOW).catch(() => undefined);
+
+    expect(await listHabitCompletionDates(ownerHabitId)).toEqual([]);
+  });
+
+  it("is refused by the action layer before it reaches the database", async () => {
+    const result = await setHabitCompletionAction(FILTER, TODAY, false);
+    expect(result.status).toBe("error");
+    // The same sentence a missing habit gets, so ids stay unenumerable.
+    expect(result.errors?._form).toBe("That habit could not be found.");
+
+    const status = await setHabitStatusAction(FILTER, "ARCHIVED");
+    expect(status.status).toBe("error");
+    expect(status.errors?._form).toBe("That habit could not be found.");
   });
 });
 

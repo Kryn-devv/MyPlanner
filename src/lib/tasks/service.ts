@@ -18,7 +18,9 @@ import type { TaskInput } from "@/lib/validation/task";
  *
  *   1. A task can only transition false -> true once per completion cycle.
  *   2. Exactly one AWARD ledger row exists per cycle, and at most one REVERSAL.
- *   3. `UserStats.totalXp` always equals the sum of the user's ledger.
+ *   3. `UserStats.totalXp` always equals the sum of the user's ledger. It is
+ *      moved by atomic increments, never by an absolute value computed from a
+ *      read, because tasks are no longer the only thing that writes it.
  *
  * (1) is enforced by a compare-and-swap: the UPDATE itself carries
  * `completed: false` in its WHERE, so two concurrent requests race in the
@@ -102,20 +104,25 @@ export async function completeTask(
       today,
     );
 
-    const totalXp = Math.max(0, stats.totalXp + xpDelta);
-    const level = calculateLevel(totalXp);
-
-    await tx.userStats.update({
+    // An atomic increment rather than a read-add-write. Phase 1 could assume
+    // task completion was the only writer of this column; since Phase 4.4 a
+    // habit tick can be moving it in another transaction at the same instant,
+    // and an absolute write computed from a stale read would discard it.
+    const moved = await tx.userStats.update({
       where: { userId },
       data: {
-        totalXp,
-        level,
+        totalXp: { increment: xpDelta },
         tasksCompleted: { increment: 1 },
         currentStreak: streak.currentStreak,
         longestStreak: streak.longestStreak,
         lastCompletedDate: streak.lastCompletedDate,
       },
+      select: { totalXp: true },
     });
+
+    const totalXp = moved.totalXp;
+    const level = calculateLevel(totalXp);
+    await tx.userStats.update({ where: { userId }, data: { level } });
 
     return {
       taskId: task.id,
@@ -188,17 +195,18 @@ export async function reopenTask(
       if (written) xpDelta = -award.amount;
     }
 
-    const totalXp = Math.max(0, stats.totalXp + xpDelta);
-    const level = calculateLevel(totalXp);
-
-    await tx.userStats.update({
+    const moved = await tx.userStats.update({
       where: { userId },
       data: {
-        totalXp,
-        level,
+        totalXp: { increment: xpDelta },
         tasksCompleted: { decrement: stats.tasksCompleted > 0 ? 1 : 0 },
       },
+      select: { totalXp: true },
     });
+
+    const totalXp = moved.totalXp;
+    const level = calculateLevel(totalXp);
+    await tx.userStats.update({ where: { userId }, data: { level } });
 
     return {
       taskId: task.id,
@@ -397,14 +405,17 @@ export async function deleteTask(userId: string, taskId: string): Promise<void> 
 
     if (forfeited !== 0 || task.completed) {
       const stats = await readStats(tx, userId);
-      const totalXp = Math.max(0, stats.totalXp - forfeited);
-      await tx.userStats.update({
+      const moved = await tx.userStats.update({
         where: { userId },
         data: {
-          totalXp,
-          level: calculateLevel(totalXp),
+          totalXp: { decrement: forfeited },
           tasksCompleted: task.completed && stats.tasksCompleted > 0 ? { decrement: 1 } : undefined,
         },
+        select: { totalXp: true },
+      });
+      await tx.userStats.update({
+        where: { userId },
+        data: { level: calculateLevel(moved.totalXp) },
       });
     }
   });

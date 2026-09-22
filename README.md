@@ -188,6 +188,13 @@ that never existed, which also keeps ids unenumerable.
 Streaks only ever change when a task is completed — opening the app from
 another timezone never mutates them.
 
+**The cached XP total moves by atomic increments.** Through Phase 4.3 task
+completion was the only writer of `UserStats.totalXp`, so it could safely
+compute the new value from a read. Phase 4.4 added a second writer, and two
+transactions reading the same total and writing absolute values lose one of the
+two amounts. Both paths now use `{ increment }`, and only the derived `level`
+is written absolutely.
+
 **The dashboard is a server component.** All of its data is fetched in one
 parallel batch; only the interactive pieces ship JavaScript.
 
@@ -221,12 +228,34 @@ bounded window (a year) means an edit changes what is *due from here on* while
 every day already kept stays exactly as it was. A run that reaches the edge of
 that window is reported as "30+" rather than pretending to know more.
 
+**A day you kept always counts, whatever the schedule says afterwards.** A
+schedule describes what is *owed*; a completion records what was *done*. So a
+kept day credits the streak even if the habit was later narrowed away from that
+weekday, and even if it was paused that same afternoon — otherwise going on
+holiday after ticking the morning's run would quietly delete that day from your
+record, including from an all-time best.
+
 **An unscheduled day is not a failure.** A Tuesday for a Mon/Wed/Fri habit, a
 day inside a pause, a day before the habit started or after it ended — none of
 these is an occurrence, so the streak steps over it rather than breaking on it.
 Pausing is recorded as an interval (`HabitPause`) precisely so that the
 arithmetic can tell "not required" from "missed" long after the fact. Today is
 neutral too: a habit you have not done yet at 09:00 has not broken anything.
+
+**A partly available week is judged against what was possible in it.** A
+five-times-a-week habit paused from Wednesday could not be done five times, so
+it is scored against the three days that existed — the same rule as "an
+unscheduled day is not a miss", one level up. A week with nothing available at
+all is neither kept nor missed.
+
+**Ids are type-checked at the action boundary.** A Server Action's arguments
+are JSON the client chose, and TypeScript's `habitId: string` is erased at
+runtime — so without an explicit check an object can arrive where an id is
+expected, and Prisma reads an object as a *filter*. Every habit action rejects
+a non-string id with the same sentence a missing habit gets, and the service
+never re-uses the caller's value once the database has handed back a real row:
+the queries on completions and pauses are scoped through `habit: { userId }` as
+well, because those tables have no owner column of their own.
 
 **Habit streaks are not the global streak.** `UserStats.currentStreak` counts
 days you completed a *task*, and habits never write it — nor `tasksCompleted`,
@@ -563,6 +592,13 @@ is a matter of flipping its `phase` and replacing one page body.
 - Habit history is read within a rolling year (`HABIT_HISTORY_DAYS`). A streak
   that runs past it is shown as "365+" rather than loading an unbounded table,
   and back-dating a completion beyond it is refused.
+- A streak is derived inside a rolling year, so a run older than that is
+  reported as a floor ("365+") rather than a total — and the same caveat now
+  applies to the longest streak, which is shown as "N+" when the best run
+  reaches the edge of the loaded history.
+- Un-ticking a day is allowed while a habit is paused or archived. Completing
+  needs an active habit; undoing only removes a row and returns the XP it paid
+  for, and refusing it would trap a mis-tick permanently behind a pause.
 - A habit occurrence cannot be focused, given a due time, or put on the
   calendar. Habits are not calendar items for the same reason focus sessions
   are not: the calendar shows what is planned, and a habit is a standing

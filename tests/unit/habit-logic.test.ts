@@ -99,7 +99,10 @@ describe("scheduling", () => {
     const paused = schedule({ pauses: [{ start: TUE, end: null }] });
     expect(isHabitScheduledOnDate(paused, MON)).toBe(true);
     expect(isHabitScheduledOnDate(paused, "2027-06-01")).toBe(false);
-    expect(pausedFor(paused, FRI)).toBe(3);
+    // Inclusive: Tue, Wed, Thu and Fri are all days it was not due.
+    expect(pausedFor(paused, FRI)).toBe(4);
+    // Paused today is one day, not zero.
+    expect(pausedFor(paused, TUE)).toBe(1);
     expect(pausedFor(schedule(), FRI)).toBeNull();
   });
 
@@ -142,6 +145,7 @@ describe("daily streaks", () => {
       current: 0,
       longest: 0,
       currentClipped: false,
+      longestClipped: false,
     });
   });
 
@@ -206,10 +210,28 @@ describe("pauses and streaks", () => {
     expect(computeHabitStreaks(paused, done(MON, TUE, WED), SUN).current).toBe(3);
   });
 
-  it("does not credit a completion recorded inside a pause", () => {
+  it("credits a completion recorded inside a pause", () => {
     const paused = schedule({ pauses: [{ start: TUE, end: THU }] });
-    // A row on a paused day is not an occurrence, so it adds nothing.
-    expect(computeHabitStreaks(paused, done(MON, WED, FRI), FRI).current).toBe(2);
+    // A pause removes the obligation, never the credit: the Wednesday was
+    // done, and a schedule describes what is owed rather than what happened.
+    expect(computeHabitStreaks(paused, done(MON, WED, FRI), FRI).current).toBe(3);
+  });
+
+  it("does not drop a day from the record when the habit is paused on it", () => {
+    // Kept Mon, Tue and Wed, then paused on the Wednesday — a holiday
+    // starting after the day's work was already done. Both the current run
+    // and the all-time best must survive it, or a lifecycle action would be
+    // rewriting history.
+    const before = computeHabitStreaks(schedule(), done(MON, TUE, WED), WED);
+    const after = computeHabitStreaks(
+      schedule({ pauses: [{ start: WED, end: null }] }),
+      done(MON, TUE, WED),
+      WED,
+    );
+
+    expect(before.current).toBe(3);
+    expect(after.current).toBe(3);
+    expect(after.longest).toBe(3);
   });
 });
 
@@ -275,6 +297,38 @@ describe("weekly-target streaks", () => {
   });
 });
 
+describe("a partly available week", () => {
+  it("is judged against what was actually possible in it", () => {
+    // Five times a week, but paused from the Thursday: only Mon–Wed were
+    // available, so three completions is a kept week rather than a failure.
+    const paused = schedule({
+      frequency: "WEEKLY",
+      weeklyTarget: 5,
+      pauses: [{ start: THU, end: SUN }],
+    });
+    expect(computeHabitStreaks(paused, done(MON, TUE, WED), SUN).current).toBe(1);
+  });
+
+  it("is judged against what was possible when the habit started mid-week", () => {
+    const fresh = schedule({ frequency: "WEEKLY", weeklyTarget: 5, startDate: THU });
+    expect(computeHabitStreaks(fresh, done(THU, FRI, SAT, SUN), SUN).current).toBe(1);
+  });
+
+  it("is judged against what was possible when the habit ended mid-week", () => {
+    const ending = schedule({ frequency: "WEEKLY", weeklyTarget: 5, endDate: WED });
+    expect(computeHabitStreaks(ending, done(MON, TUE, WED), SUN).current).toBe(1);
+  });
+
+  it("is still missed when the available days went unused", () => {
+    const paused = schedule({
+      frequency: "WEEKLY",
+      weeklyTarget: 5,
+      pauses: [{ start: THU, end: SUN }],
+    });
+    expect(computeHabitStreaks(paused, done(MON), SUN).current).toBe(0);
+  });
+});
+
 describe("the history window", () => {
   it("clips a streak longer than the window and says so", () => {
     const today = "2027-06-01";
@@ -292,6 +346,99 @@ describe("the history window", () => {
     const streaks = computeHabitStreaks(schedule({ startDate: MON }), done(MON, TUE, WED), WED);
     expect(streaks.current).toBe(3);
     expect(streaks.currentClipped).toBe(false);
+    expect(streaks.longestClipped).toBe(false);
+  });
+
+  it("reports clipping on every weekday, not only the ones that are occurrences", () => {
+    // A Mon/Wed/Fri habit kept without a break for well over the window. The
+    // backwards walk runs out of window on whatever day of the week it is, and
+    // the last day inside the window is usually not an occurrence — so a flag
+    // set only when an occurrence lands on the floor would be silent on four
+    // days in seven, for the same unbroken run.
+    for (let offset = 0; offset < 7; offset += 1) {
+      const today = addDays("2027-06-01", offset);
+      const start = addDays(today, -500);
+      const completions = new Set<string>();
+      for (let day = start; day <= today; day = addDays(day, 1)) completions.add(day);
+
+      const streaks = computeHabitStreaks(
+        { ...MWF, startDate: start },
+        completions,
+        today,
+      );
+
+      expect(streaks.current).toBeGreaterThan(0);
+      expect(streaks.currentClipped).toBe(true);
+    }
+  });
+
+  it("flags a longest run that reaches the window edge", () => {
+    const today = "2027-06-01";
+    const start = addDays(today, -800);
+    const completions = new Set<string>();
+    // An unbroken run from long before the window, stopping a month ago.
+    for (let day = start; day <= addDays(today, -30); day = addDays(day, 1)) {
+      completions.add(day);
+    }
+
+    const streaks = computeHabitStreaks(schedule({ startDate: start }), completions, today);
+
+    expect(streaks.current).toBe(0);
+    expect(streaks.longestClipped).toBe(true);
+  });
+
+  it("does not flag a longest run that began inside the window", () => {
+    const today = "2027-06-01";
+    const start = addDays(today, -800);
+    const completions = new Set<string>();
+    // Begins well after the window edge, so nothing older is hidden.
+    for (let day = addDays(today, -40); day <= addDays(today, -10); day = addDays(day, 1)) {
+      completions.add(day);
+    }
+
+    const streaks = computeHabitStreaks(schedule({ startDate: start }), completions, today);
+
+    expect(streaks.longest).toBe(31);
+    expect(streaks.longestClipped).toBe(false);
+  });
+
+  it("does not invent a missed week at the edge of a weekly habit's window", () => {
+    // Kept every Monday for three years. The weekly walk rounds the window
+    // edge back to a Monday, and the read layer loads from the same boundary,
+    // so the oldest week must not read as missed whatever weekday today is.
+    for (let offset = 0; offset < 7; offset += 1) {
+      const today = addDays("2027-06-01", offset);
+      const start = addDays(today, -1100);
+      const completions = new Set<string>();
+      for (let day = start; day <= today; day = addDays(day, 1)) {
+        if (weekOf(day).start === day) completions.add(day);
+      }
+
+      const streaks = computeHabitStreaks(
+        { ...schedule({ frequency: "WEEKLY", weeklyTarget: 1, startDate: start }) },
+        completions,
+        today,
+      );
+
+      // 366 days is 52 whole weeks plus a remainder; the run fills the window.
+      expect(streaks.current).toBeGreaterThanOrEqual(52);
+      expect(streaks.currentClipped).toBe(true);
+    }
+  });
+});
+
+describe("a week's completion rate", () => {
+  it("counts a whole week that sits inside the range", () => {
+    const rate = completionRate(THRICE, done(MON, TUE, WED), MON, SUN, SUN);
+    expect(rate).toMatchObject({ scheduled: 1, completed: 1, percent: 100 });
+  });
+
+  it("leaves out a week that began before the range", () => {
+    // The week of Mon 21 started before Wed 23, so judging it here would let
+    // days outside the range decide the figure — a 30-day rate that reached
+    // 36 days back.
+    const rate = completionRate(THRICE, done(MON, TUE, WED), WED, SUN, SUN);
+    expect(rate).toMatchObject({ scheduled: 0, completed: 0, percent: 0 });
   });
 });
 
@@ -385,10 +532,10 @@ describe("how a day reads", () => {
 describe("ordering habits for a day", () => {
   it("puts open work first, then done, then not due, then by name", () => {
     const rows = [
-      { id: "1", name: "Zeta", due: false, completed: false },
-      { id: "2", name: "Beta", due: true, completed: true },
-      { id: "3", name: "Alpha", due: true, completed: false },
-      { id: "4", name: "Gamma", due: true, completed: false },
+      { id: "1", name: "Zeta", due: false, satisfied: false },
+      { id: "2", name: "Beta", due: true, satisfied: true },
+      { id: "3", name: "Alpha", due: true, satisfied: false },
+      { id: "4", name: "Gamma", due: true, satisfied: false },
     ];
     expect([...rows].sort(compareHabitsForDay).map((r) => r.name)).toEqual([
       "Alpha",
@@ -399,8 +546,8 @@ describe("ordering habits for a day", () => {
   });
 
   it("is total, so equal rows never swap", () => {
-    const a = { id: "a", name: "Same", due: true, completed: false };
-    const b = { id: "b", name: "Same", due: true, completed: false };
+    const a = { id: "a", name: "Same", due: true, satisfied: false };
+    const b = { id: "b", name: "Same", due: true, satisfied: false };
     expect(compareHabitsForDay(a, a)).toBe(0);
     expect(compareHabitsForDay(a, b)).toBeLessThan(0);
     expect(compareHabitsForDay(b, a)).toBeGreaterThan(0);

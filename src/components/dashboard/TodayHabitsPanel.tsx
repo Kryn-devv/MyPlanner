@@ -18,7 +18,9 @@ export function TodayHabitsPanel({
   habits: readonly HabitDayView[];
   today: string;
 }) {
-  const kept = habits.filter((habit) => habit.completed).length;
+  // Settled for the day, which for a times-per-week habit includes a week
+  // whose target is already met.
+  const kept = habits.filter((habit) => habit.satisfied).length;
 
   return (
     <DashboardPanel
