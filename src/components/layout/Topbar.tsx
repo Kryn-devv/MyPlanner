@@ -1,10 +1,12 @@
 "use client";
 
-import { Flame, LogOut } from "lucide-react";
+import { Flame, LogOut, Zap } from "lucide-react";
 import { signOutAction } from "@/lib/auth/actions";
 import { APP_NAME } from "@/config/app";
 import { cn } from "@/lib/cn";
+import { getRank } from "@/config/ranks";
 import { formatXp } from "@/lib/xp";
+import { useCountUp } from "@/components/reward/useCountUp";
 import { Button } from "@/components/ui/Button";
 import { QuickAddButton } from "@/components/tasks/QuickAddButton";
 import { BrandMark } from "./Sidebar";
@@ -24,6 +26,8 @@ export interface TopbarProps {
 }
 
 export function Topbar({ name, level, totalXp, streak, className }: TopbarProps) {
+  const rank = getRank(level);
+  const xp = useCountUp(totalXp);
   const initials = name
     .split(/\s+/)
     .slice(0, 2)
@@ -48,10 +52,13 @@ export function Topbar({ name, level, totalXp, streak, className }: TopbarProps)
           <div className="flex items-center gap-1.5">
             <dt className="sr-only">Current streak</dt>
             <Flame
-              className={cn("h-3.5 w-3.5", streak > 0 ? "text-streak" : "text-ink-faint")}
+              className={cn(
+                "h-3.5 w-3.5",
+                streak > 0 ? "animate-flicker text-streak" : "text-ink-faint",
+              )}
               aria-hidden="true"
             />
-            <dd className="tnum font-medium text-ink-muted">
+            <dd className={cn("tnum font-semibold", streak > 0 ? "text-streak" : "text-ink-muted")}>
               {streak}
               <span className="sr-only"> day streak</span>
             </dd>
@@ -59,16 +66,22 @@ export function Topbar({ name, level, totalXp, streak, className }: TopbarProps)
 
           <div aria-hidden="true" className="h-3.5 w-px bg-line-strong" />
 
+          {/* Level and rank travel together everywhere they appear: the number
+              measures the climb, the title is what it bought. */}
           <div className="flex items-center gap-1.5">
             <dt className="text-ink-faint">Level</dt>
-            <dd className="tnum font-medium text-ink">{level}</dd>
+            <dd className="tnum font-semibold text-ink">{level}</dd>
+            <dd className={cn("hidden text-[0.6875rem] font-medium lg:block", rank.textClass)}>
+              {rank.title}
+            </dd>
           </div>
 
           <div aria-hidden="true" className="h-3.5 w-px bg-line-strong" />
 
-          <div className="hidden items-center gap-1.5 md:flex">
+          <div className="hidden items-center gap-1 md:flex">
             <dt className="sr-only">Total XP</dt>
-            <dd className="tnum font-medium text-ink-muted">{formatXp(totalXp)} XP</dd>
+            <Zap className="h-3 w-3 text-gold" aria-hidden="true" />
+            <dd className="tnum font-semibold text-gold-strong">{formatXp(xp)}</dd>
           </div>
         </dl>
 

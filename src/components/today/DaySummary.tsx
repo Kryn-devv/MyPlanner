@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Flame } from "lucide-react";
+import { Flame, Zap } from "lucide-react";
 import { formatDuration } from "@/lib/datetime";
 import { formatTrackedTime } from "@/lib/focus/duration";
 import type { DayProgress, DayRelation, Workload } from "@/lib/today/logic";
@@ -11,10 +11,12 @@ import { cn } from "@/lib/cn";
  * The day at a glance: how much is done, how much work it represents, and
  * what it is in service of.
  *
- * Deliberately restrained. XP and streak are shown because they are already
- * true and cost nothing to state, but they sit as one line of supporting text
- * rather than as the headline — the question this page answers is "what do I
- * need to do", not "how am I scoring".
+ * The question this page answers is still "what do I need to do" rather than
+ * "how am I scoring", so the task count keeps the headline. But the day's
+ * completion is now a ring rather than a line of text: a ring that is visibly
+ * short of closing is the one piece of pressure this page is allowed to
+ * apply, and it is honest pressure — it closes when the day's work is done
+ * and not a moment sooner.
  */
 export function DaySummary({
   progress,
@@ -45,26 +47,41 @@ export function DaySummary({
         Summary for this day
       </h2>
 
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="text-[0.9375rem] font-medium text-ink">
-          <span className="tnum">{label}</span>
-        </p>
-        {!progress.isEmpty && (
-          <p className="tnum text-[0.8125rem] text-ink-muted">{progress.percent}%</p>
-        )}
-      </div>
+      <div className="flex items-center gap-4 sm:gap-5">
+        <DayRing progress={progress} />
 
-      <ProgressBar
-        value={progress.percent}
-        tone={progress.isComplete ? "positive" : "xp"}
-        label="Tasks completed on this day"
-        valueText={
-          progress.isEmpty
-            ? "No tasks scheduled for this day"
-            : `${progress.completed} of ${progress.total} completed`
-        }
-        className="mt-3"
-      />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-[0.9375rem] font-medium text-ink">
+              <span className="tnum">{label}</span>
+            </p>
+            {xpEarned > 0 && (
+              <p className="tnum inline-flex items-center gap-1 text-[0.8125rem] font-semibold text-gold-strong">
+                <Zap className="h-3 w-3" aria-hidden="true" />+{xpEarned} XP
+                <span className="font-normal text-ink-faint">today</span>
+              </p>
+            )}
+          </div>
+
+          <ProgressBar
+            value={progress.percent}
+            tone={progress.isComplete ? "positive" : "xp"}
+            label="Tasks completed on this day"
+            valueText={
+              progress.isEmpty
+                ? "No tasks scheduled for this day"
+                : `${progress.completed} of ${progress.total} completed`
+            }
+            className="mt-2.5"
+          />
+
+          {progress.isComplete && !progress.isEmpty && (
+            <p className="mt-2 text-[0.8125rem] font-medium text-positive">
+              Day cleared. Everything scheduled is done.
+            </p>
+          )}
+        </div>
+      </div>
 
       <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[0.8125rem]">
         {!workload.isEmpty && (
@@ -100,13 +117,13 @@ export function DaySummary({
           </div>
         )}
 
-        {xpEarned !== 0 && (
+        {/* A negative day — more reopened than finished — is still worth
+            stating, but a positive one is already led with above in gold and
+            does not need saying twice. */}
+        {xpEarned < 0 && (
           <div className="flex items-baseline gap-1.5">
             <dt className="text-ink-faint">XP</dt>
-            <dd className="tnum text-accent-strong">
-              {xpEarned > 0 ? "+" : ""}
-              {xpEarned}
-            </dd>
+            <dd className="tnum text-ink-muted">{xpEarned}</dd>
           </div>
         )}
 
@@ -155,5 +172,72 @@ export function DaySummary({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The day as a ring.
+ *
+ * Server-rendered SVG with no client JavaScript: this page is otherwise a
+ * server component, and a decorative dial is not worth a hydration boundary.
+ * The figure it carries is already announced by the bar beside it, so the
+ * ring itself is hidden from assistive technology rather than repeating it.
+ */
+function DayRing({ progress }: { progress: DayProgress }) {
+  const size = 62;
+  const thickness = 6;
+  const radius = (size - thickness) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const value = progress.isEmpty ? 0 : Math.min(100, Math.max(0, progress.percent));
+  const offset = circumference * (1 - value / 100);
+
+  return (
+    <div aria-hidden="true" className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 -rotate-90">
+        <defs>
+          <linearGradient id="day-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop
+              offset="0%"
+              stopColor={progress.isComplete ? "var(--color-positive)" : "var(--color-xp-from)"}
+            />
+            <stop
+              offset="100%"
+              stopColor={progress.isComplete ? "var(--color-xp-to)" : "var(--color-xp-to)"}
+            />
+          </linearGradient>
+        </defs>
+
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={thickness}
+          className="text-white/[0.06]"
+        />
+
+        {value > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="url(#day-ring)"
+            strokeWidth={thickness}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-[stroke-dashoffset] duration-700 ease-[var(--ease-out-quint)]"
+          />
+        )}
+      </svg>
+
+      <span className="absolute inset-0 grid place-items-center">
+        <span className="tnum text-[0.8125rem] font-semibold text-ink">
+          {progress.isEmpty ? "—" : `${progress.percent}%`}
+        </span>
+      </span>
+    </div>
   );
 }

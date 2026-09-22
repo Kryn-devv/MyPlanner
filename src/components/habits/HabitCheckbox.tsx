@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { HabitDayView } from "@/lib/habits/queries";
 import { formatRelativeDay } from "@/lib/datetime";
@@ -31,8 +31,17 @@ export function HabitCheckbox({
   const reduceMotion = useReducedMotion();
   const { toggleCompletion } = useHabitDialogs();
   const [completed, setCompleted] = useState(habit.completed);
+  // Fired only on the open-to-kept transition, so the ring marks keeping the
+  // habit rather than merely rendering it.
+  const [ringKey, setRingKey] = useState(0);
+  const previous = useRef(habit.completed);
 
   useEffect(() => setCompleted(habit.completed), [habit.completed]);
+
+  useEffect(() => {
+    if (completed && !previous.current) setRingKey((key) => key + 1);
+    previous.current = completed;
+  }, [completed]);
 
   // A habit that is not active has no occurrences to tick; a day it was never
   // due cannot be ticked into one; and a day that has not happened yet cannot
@@ -55,9 +64,12 @@ export function HabitCheckbox({
   const when = habit.date === today ? "today" : formatRelativeDay(habit.date, today);
 
   return (
-    <button
+    <motion.button
       type="button"
       disabled={disabled}
+      whileTap={reduceMotion || disabled ? undefined : { scale: 0.86 }}
+      animate={reduceMotion ? undefined : { scale: completed ? [1, 1.2, 1] : 1 }}
+      transition={{ duration: 0.34, ease: [0.34, 1.56, 0.64, 1] }}
       aria-pressed={completed}
       aria-label={
         reason
@@ -76,22 +88,31 @@ export function HabitCheckbox({
       }}
       className={cn(
         "group/check relative grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border",
-        "transition-[background-color,border-color,transform] duration-200 ease-[var(--ease-out-quint)]",
-        "hover:scale-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:scale-100",
+        "transition-[background-color,border-color,box-shadow] duration-200 ease-[var(--ease-out-quint)]",
+        "disabled:cursor-not-allowed disabled:opacity-45",
         completed
-          ? "border-positive/60 bg-positive/20"
+          ? "border-positive/70 bg-positive/25 shadow-[0_0_10px_-2px_var(--color-positive)]"
           : "border-line-strong bg-white/[0.02] hover:border-accent/60 hover:bg-accent/10",
         className,
       )}
     >
+      {!reduceMotion && ringKey > 0 && (
+        <span
+          key={ringKey}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-full border-2 border-positive"
+          style={{ animation: "ring-out 520ms var(--ease-out-quint) forwards" }}
+        />
+      )}
+
       <motion.span
         initial={false}
         animate={completed ? { scale: 1, opacity: 1 } : { scale: 0.4, opacity: 0 }}
-        transition={{ duration: reduceMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.34, 1.56, 0.64, 1] }}
         aria-hidden="true"
       >
         <Check className="h-3.5 w-3.5 text-positive" strokeWidth={3.5} />
       </motion.span>
-    </button>
+    </motion.button>
   );
 }

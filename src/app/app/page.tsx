@@ -8,16 +8,14 @@ import { getActiveProjectsForDashboard, getProjectStatusCounts } from "@/lib/pro
 import { getDashboardData } from "@/lib/tasks/queries";
 import { ActiveGoalsPanel } from "@/components/dashboard/ActiveGoalsPanel";
 import { ActiveProjectsPanel } from "@/components/dashboard/ActiveProjectsPanel";
-import { DailyProgressCard } from "@/components/dashboard/DailyProgressCard";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { DeadlinesPanel } from "@/components/dashboard/DeadlinesPanel";
 import { QuickAddPrompt } from "@/components/dashboard/QuickAddPrompt";
+import { PlayerCard } from "@/components/dashboard/PlayerCard";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { TodayHabitsPanel } from "@/components/dashboard/TodayHabitsPanel";
-import { StreakCard } from "@/components/streaks/StreakCard";
 import { TaskList } from "@/components/tasks/TaskList";
-import { XpProgress } from "@/components/xp/XpProgress";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -53,20 +51,8 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <DashboardHeader greeting={greeting} name={user.name} today={data.today} />
 
-      {/* -- headline figures ------------------------------------------- */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="panel p-5 sm:col-span-2">
-          <XpProgress progress={data.progress} />
-        </div>
-
-        <StreakCard
-          current={data.streak.current}
-          longest={data.streak.longest}
-          atRisk={data.streak.atRisk}
-        />
-
-        <DailyProgressCard daily={data.daily} />
-      </div>
+      {/* -- who you are, and how today is going ------------------------ */}
+      <PlayerCard progress={data.progress} streak={data.streak} daily={data.daily} />
 
       {/* -- today, upcoming, deadlines ---------------------------------- */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">

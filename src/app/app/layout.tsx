@@ -18,6 +18,7 @@ import { TaskDialogProvider } from "@/components/tasks/TaskDialogProvider";
 import { FocusBar } from "@/components/focus/FocusBar";
 import { FocusConflictDialog } from "@/components/focus/FocusConflictDialog";
 import { FocusProvider } from "@/components/focus/FocusProvider";
+import { RewardProvider } from "@/components/reward/RewardProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 
 /**
@@ -65,6 +66,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <ToastProvider>
+      <RewardProvider>
       {/* Nested outermost-first so the Quick Add button in the header, which
           can create any of the four, sits inside all of them. */}
       <FocusProvider active={activeFocus}>
@@ -111,6 +113,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </ProjectDialogProvider>
         </GoalDialogProvider>
       </FocusProvider>
+      </RewardProvider>
     </ToastProvider>
   );
 }

@@ -74,8 +74,8 @@ export function TaskCard({
       layout={!reduceMotion}
       transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "panel-flush group relative flex items-start gap-3 px-4 py-3 pl-[1.125rem]",
-        "transition-colors duration-200 hover:border-line-strong hover:bg-white/[0.015]",
+        "panel-flush panel-interactive group relative flex items-start gap-3 px-4 py-3 pl-[1.125rem]",
+        "hover:bg-white/[0.03]",
         task.completed && "opacity-55",
         className,
       )}

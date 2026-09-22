@@ -15,6 +15,7 @@ import type { HabitDayView, HabitView } from "@/lib/habits/queries";
 import { formatXpDelta } from "@/lib/xp";
 import type { HabitStatus } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
+import { useReward } from "@/components/reward/RewardProvider";
 import { useToast } from "@/components/ui/Toast";
 import { HabitForm } from "./HabitForm";
 
@@ -53,6 +54,7 @@ export function HabitDialogProvider({ children, today }: { children: ReactNode; 
   const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
   const [busy, startTransition] = useTransition();
   const { push } = useToast();
+  const { celebrate } = useReward();
 
   const close = useCallback(() => setDialog({ kind: "closed" }), []);
 
@@ -106,6 +108,13 @@ export function HabitDialogProvider({ children, today }: { children: ReactNode; 
         const outcome = result.outcome;
         if (!outcome || !outcome.changed || outcome.xpDelta === 0) return;
 
+        celebrate({
+          xpDelta: outcome.xpDelta,
+          level: outcome.level,
+          leveledUp: outcome.leveledUp,
+          label: habit.name,
+        });
+
         if (outcome.leveledUp) {
           push({
             tone: "xp",
@@ -121,7 +130,7 @@ export function HabitDialogProvider({ children, today }: { children: ReactNode; 
         }
       });
     },
-    [push],
+    [push, celebrate],
   );
 
   const handleFormSuccess = useCallback(

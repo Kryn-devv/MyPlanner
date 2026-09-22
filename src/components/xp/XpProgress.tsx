@@ -1,6 +1,10 @@
+"use client";
+
+import { getRank } from "@/config/ranks";
 import { cn } from "@/lib/cn";
 import type { LevelProgress } from "@/lib/leveling";
 import { formatXp } from "@/lib/xp";
+import { useCountUp } from "@/components/reward/useCountUp";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
 /**
@@ -17,22 +21,35 @@ export interface XpProgressProps {
 }
 
 export function XpProgress({ progress, className, variant = "full" }: XpProgressProps) {
-  const { level, xpIntoLevel, xpForLevel, xpToNextLevel, percent, isMaxLevel, totalXp } = progress;
+  const { level, xpIntoLevel, xpForLevel, xpToNextLevel, percent, isMaxLevel } = progress;
+  // Counts rather than snaps, so XP that has just been earned is visibly
+  // arriving instead of having silently already arrived.
+  const totalXp = useCountUp(progress.totalXp);
 
   const valueText = isMaxLevel
     ? `Level ${level}, maximum level reached`
     : `${formatXp(xpIntoLevel)} of ${formatXp(xpForLevel)} XP towards level ${level + 1}`;
 
   if (variant === "compact") {
+    const rank = getRank(level);
+
     return (
       <div className={cn("space-y-2", className)}>
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-[0.6875rem] font-semibold tracking-[0.14em] text-ink-muted">
             LEVEL <span className="tnum text-ink">{level}</span>
           </span>
-          <span className="tnum text-[0.6875rem] text-ink-faint">{percent}%</span>
+          {/* The rank rather than a bare percentage: the sidebar is the one
+              place this figure is always on screen, so it should say who you
+              are rather than restate the bar directly beneath it. */}
+          <span className={cn("text-[0.625rem] font-semibold uppercase tracking-wider", rank.textClass)}>
+            {rank.title}
+          </span>
         </div>
         <ProgressBar value={percent} label="Level progress" valueText={valueText} size="sm" />
+        <p className="tnum text-[0.625rem] text-ink-faint">
+          {isMaxLevel ? "Maximum level" : `${formatXp(xpToNextLevel)} XP to level ${level + 1}`}
+        </p>
       </div>
     );
   }

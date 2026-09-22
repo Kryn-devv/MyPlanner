@@ -3,13 +3,17 @@
 /* ===========================================================================
    NOVA — design tokens
 
-   Direction: a dark, quiet instrument panel. Near-black base, surfaces that
-   separate by one or two steps of luminance rather than by heavy borders, a
-   single accent used sparingly, and glow reserved for the two things the
-   product is actually about — progression and streaks.
+   Direction: a dark instrument panel that comes alive when you use it.
 
-   Deliberately avoided: saturated neon, glowing text, oversized radii,
-   stacked translucent panels, and the blue-on-white-card SaaS look.
+   The quiet chassis is still the point — near-black base, surfaces that
+   separate by luminance rather than heavy borders. What changed is that the
+   product's reward loop is now *expressed* rather than merely recorded:
+   progression, streaks and the moment a task lands get real colour, real
+   light and real motion. Everything else stays restrained so that when the
+   reward layer fires, it reads as an event rather than as more noise.
+
+   Deliberately avoided: neon for its own sake, glowing body text, oversized
+   radii, stacked translucent panels, and the blue-on-white-card SaaS look.
    =========================================================================== */
 
 @theme {
@@ -31,18 +35,34 @@
 
   /* -- accent: interaction, focus, active state -------------------------- */
   --color-accent: #8b7cff;
-  --color-accent-strong: #a094ff;
+  --color-accent-strong: #a89dff;
   --color-accent-dim: #5f52c4;
+  --color-accent-deep: #3d3387;
 
-  /* -- progression: the XP rail, and nothing else ------------------------ */
+  /* -- progression: the XP rail and every reward that pays into it ------- */
   --color-xp-from: #8b7cff;
   --color-xp-to: #4fd1e8;
+  /* The colour of earning something. Used by XP numerals, bursts and the
+     level-up moment — never as a surface. */
+  --color-gold: #fbbf24;
+  --color-gold-strong: #fcd34d;
 
   /* -- signals ----------------------------------------------------------- */
   --color-streak: #f5a524;
+  --color-streak-hot: #fb923c;
   --color-positive: #34d399;
   --color-caution: #fbbf24;
   --color-critical: #fb7185;
+
+  /* -- light ------------------------------------------------------------
+     Glow is a reward signal, not decoration. Three intensities so the same
+     idea can whisper on a hover and shout on a level-up. */
+  --glow-accent-sm: 0 0 0 1px oklch(62% 0.17 288 / 22%), 0 6px 20px -6px oklch(62% 0.17 288 / 45%);
+  --glow-accent-md: 0 0 0 1px oklch(62% 0.17 288 / 30%), 0 10px 34px -8px oklch(62% 0.17 288 / 65%);
+  --glow-gold: 0 0 24px -4px oklch(84% 0.16 86 / 55%);
+  --glow-streak: 0 0 20px -4px oklch(76% 0.16 62 / 60%);
+  --shadow-lift: 0 10px 30px -12px rgb(0 0 0 / 70%);
+  --shadow-float: 0 24px 60px -20px rgb(0 0 0 / 85%);
 
   /* -- type -------------------------------------------------------------- */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -52,6 +72,9 @@
      One easing curve everywhere. Consistency reads as quality; a grab-bag of
      curves reads as noise. */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  /* The overshoot used by anything that should feel *satisfying* to trigger:
+     a checkbox landing, a burst appearing, a badge popping in. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* -- radii -------------------------------------------------------------- */
   --radius-panel: 14px;
@@ -192,6 +215,159 @@
   /* Used only on the XP rail. */
   .xp-fill {
     background: linear-gradient(90deg, var(--color-xp-from), var(--color-xp-to));
+  }
+
+  /* A light that travels across a filled rail, so progress reads as live
+     rather than as a static measurement. */
+  .xp-fill-live {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .xp-fill-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      oklch(100% 0 0 / 38%) 48%,
+      transparent 76%
+    );
+    transform: translateX(-100%);
+    animation: sheen 2.6s var(--ease-out-quint) infinite;
+  }
+
+  /* A panel that responds to the pointer. Applied to anything clickable that
+     is bigger than a control — cards, tiles, list rows. */
+  .panel-interactive {
+    transition:
+      border-color 200ms var(--ease-out-quint),
+      transform 200ms var(--ease-out-quint),
+      box-shadow 200ms var(--ease-out-quint);
+  }
+
+  .panel-interactive:hover {
+    border-color: var(--color-line-strong);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lift);
+  }
+
+  .panel-interactive:active {
+    transform: translateY(0);
+  }
+
+  /* Numerals that represent earned value. Gradient fill rather than a flat
+     colour, because this is the number the whole loop is about. */
+  .numeral-xp {
+    background: linear-gradient(135deg, var(--color-gold-strong), var(--color-streak));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .numeral-level {
+    background: linear-gradient(135deg, #fff, var(--color-accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* ===========================================================================
+   Reward motion
+
+   Every keyframe here belongs to the reward loop. They are declared once, in
+   CSS rather than in component code, so the same physics is shared by the XP
+   burst, the level-up moment and the streak flame — and so the
+   reduced-motion block above neutralises all of them in one place.
+   =========================================================================== */
+
+@keyframes sheen {
+  0% {
+    transform: translateX(-100%);
+  }
+  55%,
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+/* An earned amount rising away from the control that produced it. */
+@keyframes rise-away {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.7);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -14px) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -54px) scale(1);
+  }
+}
+
+/* A ring expanding out of a control that was just activated. */
+@keyframes ring-out {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* A single particle thrown outward. Direction comes from a CSS variable the
+   component sets per particle, so one keyframe serves all of them. */
+@keyframes spark {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--spark-x), var(--spark-y)) scale(0.2);
+  }
+}
+
+/* The flame on an active streak. Barely perceptible, and that is the point:
+   it should read as alive rather than as animated. */
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.82;
+    transform: scale(1.06);
+  }
+}
+
+/* A value that has just changed. */
+@keyframes pop-in {
+  0% {
+    transform: scale(0.82);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@layer components {
+  .animate-flicker {
+    animation: flicker 2.4s ease-in-out infinite;
+  }
+
+  .animate-pop {
+    animation: pop-in 320ms var(--ease-spring);
   }
 }
 

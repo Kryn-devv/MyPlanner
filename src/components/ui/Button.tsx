@@ -18,8 +18,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<ButtonVariant, string> = {
+  // The primary action carries the progression gradient and a real glow. It is
+  // the button that starts work, and it should look like the most alive thing
+  // on the screen rather than like a flat violet rectangle.
   primary:
-    "bg-accent text-white shadow-[0_1px_0_0_oklch(100%_0_0/18%)_inset,0_6px_20px_-8px_oklch(62%_0.17_288/70%)] hover:bg-accent-strong active:bg-accent-dim",
+    "bg-gradient-to-b from-accent-strong to-accent text-white shadow-[0_1px_0_0_oklch(100%_0_0/22%)_inset,var(--glow-accent-sm)] hover:from-accent-strong hover:to-accent-strong hover:shadow-[0_1px_0_0_oklch(100%_0_0/22%)_inset,var(--glow-accent-md)] active:from-accent active:to-accent-dim",
   secondary:
     "bg-elevated text-ink border border-line-strong hover:bg-overlay hover:border-white/20",
   ghost: "text-ink-muted hover:text-ink hover:bg-white/5",
@@ -46,8 +49,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       className={cn(
         "relative inline-flex select-none items-center justify-center font-medium",
-        "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out-quint)]",
-        "active:scale-[0.985] disabled:pointer-events-none disabled:opacity-45",
+        "transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-[var(--ease-out-quint)]",
+        "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45",
         VARIANTS[variant],
         SIZES[size],
         className,

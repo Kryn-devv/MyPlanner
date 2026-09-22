@@ -17,6 +17,7 @@ import { formatXpDelta } from "@/lib/xp";
 import type { LocalDate } from "@/lib/datetime";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { useReward } from "@/components/reward/RewardProvider";
 import { useToast } from "@/components/ui/Toast";
 import { TaskForm } from "./TaskForm";
 
@@ -82,6 +83,7 @@ export function TaskDialogProvider({
   const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
   const [deleting, startDeleting] = useTransition();
   const { push } = useToast();
+  const { celebrate } = useReward();
 
   const close = useCallback(() => setDialog({ kind: "closed" }), []);
 
@@ -113,6 +115,16 @@ export function TaskDialogProvider({
         }
 
         const delta = result.outcome?.xpDelta ?? 0;
+
+        // The visual reward fires from the same outcome the toast reads, so
+        // the two can never disagree about what was actually earned.
+        celebrate({
+          xpDelta: delta,
+          level: result.outcome?.level ?? 1,
+          leveledUp: Boolean(result.outcome?.leveledUp),
+          label: task.title,
+        });
+
         if (result.outcome?.leveledUp) {
           push({
             tone: "xp",
@@ -128,7 +140,7 @@ export function TaskDialogProvider({
         }
       });
     },
-    [push],
+    [push, celebrate],
   );
 
   const handleFormSuccess = useCallback(
