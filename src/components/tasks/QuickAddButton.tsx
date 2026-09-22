@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { useGoalDialogs } from "@/components/goals/GoalDialogProvider";
+import { useHabitDialogs } from "@/components/habits/HabitDialogProvider";
 import { useProjectDialogs } from "@/components/projects/ProjectDialogProvider";
 import { useTaskDialogs } from "./TaskDialogProvider";
 
@@ -19,17 +20,18 @@ import { useTaskDialogs } from "./TaskDialogProvider";
  *
  * The rarer creations get keyboard shortcuts instead, registered here because
  * the header is mounted on every page: N for a task, P for a project, G for a
- * goal. Each is also reachable from its own page's button.
+ * goal, H for a habit. Each is also reachable from its own page's button.
  */
 export function QuickAddButton({ className }: { className?: string }) {
   const { openCreate } = useTaskDialogs();
   const { openCreateProject } = useProjectDialogs();
   const { openCreateGoal } = useGoalDialogs();
+  const { openCreateHabit } = useHabitDialogs();
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (key !== "n" && key !== "p" && key !== "g") return;
+      if (key !== "n" && key !== "p" && key !== "g" && key !== "h") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const target = event.target as HTMLElement | null;
@@ -43,12 +45,13 @@ export function QuickAddButton({ className }: { className?: string }) {
       event.preventDefault();
       if (key === "n") openCreate();
       else if (key === "p") openCreateProject();
-      else openCreateGoal();
+      else if (key === "g") openCreateGoal();
+      else openCreateHabit();
     };
 
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [openCreate, openCreateProject, openCreateGoal]);
+  }, [openCreate, openCreateProject, openCreateGoal, openCreateHabit]);
 
   return (
     <Button

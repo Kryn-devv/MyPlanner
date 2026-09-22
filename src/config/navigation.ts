@@ -88,13 +88,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { label: "Projects", href: "/app/projects", icon: FolderKanban, phase: 1 },
       { label: "Goals", href: "/app/goals", icon: Target, phase: 1 },
-      {
-        label: "Habits",
-        href: "/app/habits",
-        icon: Repeat,
-        phase: 2,
-        summary: "The things you want to do repeatedly, tracked over time.",
-      },
+      // Phase 4.4: a schedule and the days it was kept — not recurring tasks.
+      { label: "Habits", href: "/app/habits", icon: Repeat, phase: 1 },
       // Phase 4.3: timed sessions recorded against the task being worked on.
       { label: "Focus", href: "/app/focus", icon: Timer, phase: 1 },
       {

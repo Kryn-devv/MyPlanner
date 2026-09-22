@@ -13,6 +13,7 @@ import {
   type LocalDate,
 } from "@/lib/datetime";
 import { deriveDayFocus } from "@/lib/today/logic";
+import { getHabitsForDay } from "@/lib/habits/queries";
 import { getTodayData } from "@/lib/today/queries";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { QuickAddPrompt } from "@/components/dashboard/QuickAddPrompt";
@@ -21,6 +22,7 @@ import { TaskList } from "@/components/tasks/TaskList";
 import { DaySummary } from "@/components/today/DaySummary";
 import { TodayDateNav } from "@/components/today/TodayDateNav";
 import { TodaySection } from "@/components/today/TodaySection";
+import { HabitDayList } from "@/components/habits/HabitRow";
 
 export const metadata: Metadata = { title: "Today" };
 
@@ -70,9 +72,16 @@ export default async function TodayPage({
   const today = getLocalToday(user.timezone);
   const selectedDate = parseDate(requested, today);
 
-  const data = await getTodayData(user.id, user.timezone, selectedDate, today);
+  // Habits are a separate read, not part of `getTodayData`: they are not
+  // tasks and share none of its query surface. Running the two concurrently
+  // keeps the page one round trip deep.
+  const [data, habits] = await Promise.all([
+    getTodayData(user.id, user.timezone, selectedDate, today),
+    getHabitsForDay(user.id, selectedDate, today),
+  ]);
   const { sections, progress, workload, overdue, alsoCompleted, upcoming, unscheduled } = data;
 
+  const habitsKept = habits.filter((habit) => habit.completed).length;
   const focus = deriveDayFocus([...sections.timed, ...sections.allDay, ...sections.completed]);
   const isToday = data.relation === "today";
   const hasDayTasks = progress.total > 0;
@@ -134,6 +143,24 @@ export default async function TodayPage({
         </TodaySection>
       )}
 
+      {habits.length > 0 && (
+        <TodaySection
+          id="habits"
+          title="Habits"
+          count={habits.length}
+          note={
+            habitsKept === habits.length
+              ? "Every habit due on this day is done."
+              : `${habitsKept} of ${habits.length} kept.`
+          }
+        >
+          {/* A habit is not a task and is deliberately not rendered as one:
+              no priority, no due time, no project — just the tick, the name
+              and the run it is part of. */}
+          <HabitDayList habits={habits} today={today} />
+        </TodaySection>
+      )}
+
       {sections.timed.length > 0 && (
         <TodaySection id="timed" title="At a time" count={sections.timed.length}>
           <TaskList
@@ -156,7 +183,7 @@ export default async function TodayPage({
         </TodaySection>
       )}
 
-      {!hasDayTasks && (
+      {!hasDayTasks && habits.length === 0 && (
         <EmptyState
           icon={<CalendarCheck />}
           // Not lower-cased: the label can be a date like "Thu 24 Sep", and

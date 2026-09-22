@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { AlertTriangle, CalendarRange, CheckCircle2, ListTodo, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth/guard";
-import { getGreeting } from "@/lib/datetime";
+import { getGreeting, getLocalToday } from "@/lib/datetime";
 import { getActiveGoalsForDashboard, getGoalStatusCounts } from "@/lib/goals/queries";
+import { getHabitsForDay } from "@/lib/habits/queries";
 import { getActiveProjectsForDashboard, getProjectStatusCounts } from "@/lib/projects/queries";
 import { getDashboardData } from "@/lib/tasks/queries";
 import { ActiveGoalsPanel } from "@/components/dashboard/ActiveGoalsPanel";
@@ -13,6 +14,7 @@ import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { DeadlinesPanel } from "@/components/dashboard/DeadlinesPanel";
 import { QuickAddPrompt } from "@/components/dashboard/QuickAddPrompt";
 import { StatCard } from "@/components/dashboard/StatCard";
+import { TodayHabitsPanel } from "@/components/dashboard/TodayHabitsPanel";
 import { StreakCard } from "@/components/streaks/StreakCard";
 import { TaskList } from "@/components/tasks/TaskList";
 import { XpProgress } from "@/components/xp/XpProgress";
@@ -32,13 +34,17 @@ export default async function DashboardPage() {
 
   // Fetched alongside the dashboard's own batch rather than after it: projects
   // are an extra panel, not an extra waterfall.
-  const [data, activeProjects, projectCounts, activeGoals, goalCounts] = await Promise.all([
-    getDashboardData(user.id, user.timezone),
-    getActiveProjectsForDashboard(user.id, user.timezone, 3),
-    getProjectStatusCounts(user.id),
-    getActiveGoalsForDashboard(user.id, user.timezone, 3),
-    getGoalStatusCounts(user.id),
-  ]);
+  const today = getLocalToday(user.timezone);
+
+  const [data, activeProjects, projectCounts, activeGoals, goalCounts, habits] =
+    await Promise.all([
+      getDashboardData(user.id, user.timezone),
+      getActiveProjectsForDashboard(user.id, user.timezone, 3),
+      getProjectStatusCounts(user.id),
+      getActiveGoalsForDashboard(user.id, user.timezone, 3),
+      getGoalStatusCounts(user.id),
+      getHabitsForDay(user.id, today, today),
+    ]);
 
   const greeting = getGreeting(user.timezone);
   const hasAnyTask = data.totalOpenTasks > 0 || data.todayTasks.length > 0;
@@ -123,6 +129,8 @@ export default async function DashboardPage() {
             today={data.today}
             totalActive={projectCounts.ACTIVE}
           />
+
+          <TodayHabitsPanel habits={habits} today={data.today} />
 
           <DeadlinesPanel deadlines={data.deadlines} today={data.today} />
 

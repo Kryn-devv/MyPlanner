@@ -12,6 +12,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { GoalDialogProvider } from "@/components/goals/GoalDialogProvider";
+import { HabitDialogProvider } from "@/components/habits/HabitDialogProvider";
 import { ProjectDialogProvider } from "@/components/projects/ProjectDialogProvider";
 import { TaskDialogProvider } from "@/components/tasks/TaskDialogProvider";
 import { FocusBar } from "@/components/focus/FocusBar";
@@ -65,46 +66,48 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       {/* Nested outermost-first so the Quick Add button in the header, which
-          can create any of the three, sits inside all of them. */}
+          can create any of the four, sits inside all of them. */}
       <FocusProvider active={activeFocus}>
         <GoalDialogProvider connectableProjects={projects}>
           <ProjectDialogProvider goals={goals}>
-            <TaskDialogProvider
-              categories={categories}
-              projects={projects}
-              today={today}
-            >
-              <div className="relative z-10 flex min-h-dvh">
-                <Sidebar
-                  progress={progress}
-                  className="sticky top-0 hidden lg:flex"
-                />
-
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <Topbar
-                    name={user.name}
-                    level={progress.level}
-                    totalXp={progress.totalXp}
-                    streak={streak}
+            <HabitDialogProvider today={today}>
+              <TaskDialogProvider
+                categories={categories}
+                projects={projects}
+                today={today}
+              >
+                <div className="relative z-10 flex min-h-dvh">
+                  <Sidebar
+                    progress={progress}
+                    className="sticky top-0 hidden lg:flex"
                   />
 
-                  {/* Sits under the header rather than floating: it is context,
-                    not a modal, and on a phone it costs one line. */}
-                  <FocusBar />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <Topbar
+                      name={user.name}
+                      level={progress.level}
+                      totalXp={progress.totalXp}
+                      streak={streak}
+                    />
 
-                  <main
-                    id="main"
-                    // Bottom padding clears the mobile navigation bar.
-                    className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:pb-12"
-                  >
-                    {children}
-                  </main>
+                    {/* Sits under the header rather than floating: it is context,
+                      not a modal, and on a phone it costs one line. */}
+                    <FocusBar />
+
+                    <main
+                      id="main"
+                      // Bottom padding clears the mobile navigation bar.
+                      className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:pb-12"
+                    >
+                      {children}
+                    </main>
+                  </div>
                 </div>
-              </div>
 
-              <MobileNav />
-              <FocusConflictDialog />
-            </TaskDialogProvider>
+                <MobileNav />
+                <FocusConflictDialog />
+              </TaskDialogProvider>
+            </HabitDialogProvider>
           </ProjectDialogProvider>
         </GoalDialogProvider>
       </FocusProvider>

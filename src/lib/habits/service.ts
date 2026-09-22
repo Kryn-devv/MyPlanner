@@ -133,6 +133,13 @@ async function applyXpDelta(
   delta: number,
 ): Promise<{ previousLevel: number; totalXp: number; level: number }> {
   const before = await readXpStats(tx, userId);
+  // A zero-reward habit still records the day; it just has nothing to move,
+  // and taking the stats row's write lock for a no-op would serialise ticks
+  // across every habit for no reason.
+  if (delta === 0) {
+    return { previousLevel: before.level, totalXp: before.totalXp, level: before.level };
+  }
+
   const moved = await tx.userStats.update({
     where: { userId },
     data: { totalXp: { increment: delta } },
