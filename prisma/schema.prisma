@@ -47,10 +47,12 @@ enum Priority {
   URGENT
 }
 
-/// Where an XP ledger entry came from. Phase 2+ will add STREAK_BONUS,
-/// HABIT_COMPLETION, GOAL_MILESTONE, FOCUS_SESSION, ACHIEVEMENT.
+/// Where an XP ledger entry came from. Later phases may add STREAK_BONUS,
+/// GOAL_MILESTONE, ACHIEVEMENT. FOCUS_SESSION was deliberately never added:
+/// awarding XP per focused minute would make the ledger a stopwatch to game.
 enum XpSource {
   TASK_COMPLETION
+  HABIT_COMPLETION
   ADJUSTMENT
 }
 
@@ -83,6 +85,28 @@ enum ProjectStatus {
 enum MilestoneStatus {
   PENDING
   COMPLETED
+}
+
+/// Lifecycle of a habit.
+///
+/// PAUSED is a real state, not a flag: while paused a habit schedules nothing,
+/// so the days in between are neither completed nor missed. ARCHIVED is
+/// terminal for scheduling but not for history — completions stay, and so do
+/// the streaks they earned.
+enum HabitStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+/// How a habit recurs. Deliberately three shapes and no recurrence language:
+/// every day; a fixed set of weekdays; or a number of times per week with no
+/// particular day. Anything an RRULE could express beyond that is a later
+/// decision, made when someone actually needs it.
+enum HabitFrequency {
+  DAILY
+  WEEKDAYS
+  WEEKLY
 }
 
 /// Lifecycle of a period of focused work.
@@ -136,6 +160,7 @@ model User {
   projects       Project[]
   xpTransactions XpTransaction[]
   focusSessions  FocusSession[]
+  habits         Habit[]
   stats          UserStats?
 
   @@index([email])
@@ -437,13 +462,23 @@ model XpTransaction {
   /// database level, not just in application code.
   cycle Int @default(0)
 
+  /// The habit completion this entry belongs to, when it came from a habit.
+  /// SetNull rather than Cascade: undoing a completion deletes the completion
+  /// row, and the ledger is append-only — the AWARD and its REVERSAL both stay,
+  /// detached, netting to zero. The unique below is what makes each completion
+  /// award once and reverse once, however many requests race.
+  habitCompletionId String?
+  habitCompletion   HabitCompletion? @relation(fields: [habitCompletionId], references: [id], onDelete: SetNull)
+
   description String?
   createdAt   DateTime @default(now())
 
   @@unique([taskId, kind, cycle])
+  @@unique([habitCompletionId, kind])
   @@index([userId, createdAt])
   @@index([userId, source])
   @@index([taskId])
+  @@index([habitCompletionId])
 }
 
 /// Cached aggregates. Always written inside the same transaction as the event
@@ -538,4 +573,101 @@ model FocusSession {
   @@index([taskId, status])
   /// Today's tracked focus: this user's finished sessions in a time window.
   @@index([userId, endedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Habit domain
+// ---------------------------------------------------------------------------
+
+/// A behaviour the user wants to repeat.
+///
+/// Not a recurring task, and never turned into one: a task is something to
+/// finish, a habit is something to keep doing, and generating a task row per
+/// day would make the task list lie about how much work exists. A habit owns
+/// its own completion history (`HabitCompletion`) and its own schedule.
+///
+/// Streaks are derived on read from the completion history and the current
+/// schedule (src/lib/habits/logic.ts), never stored. A cached streak would be
+/// wrong the moment the schedule was edited — it was computed under the old
+/// weekdays — and every edit would then need a recompute path of its own.
+/// Reads load a bounded window of completion *dates* instead. This is the
+/// habit's own streak; the global task streak on `UserStats` is a different
+/// thing and is never written from here.
+model Habit {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  status    HabitStatus    @default(ACTIVE)
+  frequency HabitFrequency @default(DAILY)
+
+  /// For WEEKDAYS: the days it is due, 0 = Sunday … 6 = Saturday, matching
+  /// `partsOf().weekday` in the date layer. Empty for the other frequencies.
+  weekdays Int[] @default([])
+  /// For WEEKLY: completions wanted per Monday–Sunday week. Null otherwise.
+  weeklyTarget Int?
+
+  /// Awarded once per completed occurrence, through the existing XP ledger.
+  xpReward Int @default(10)
+
+  /// The first day the habit is due. Occurrences before it do not exist, so
+  /// they cannot be missed. Stored as a DATE for the reason every deadline is.
+  startDate DateTime  @db.Date
+  /// Optional last day. After it the habit schedules nothing.
+  endDate   DateTime? @db.Date
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  completions HabitCompletion[]
+  pauses      HabitPause[]
+
+  @@index([userId, status])
+}
+
+/// One completed occurrence of a habit on one calendar day.
+///
+/// A row exists exactly when the occurrence is complete; undoing deletes it.
+/// The unique constraint is the double-completion guard: ten simultaneous
+/// requests produce one row, because the other nine lose on the index before
+/// any XP is written. Ownership flows through the habit, as a milestone's does
+/// through its project — one owner column cannot drift from another.
+model HabitCompletion {
+  id      String @id @default(cuid())
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  /// The occurrence this completes, on the user's calendar.
+  completedDate DateTime @db.Date
+  /// When it was actually ticked. An instant, for the day's XP window.
+  completedAt   DateTime @default(now())
+
+  xpTransactions XpTransaction[]
+
+  @@unique([habitId, completedDate])
+  @@index([habitId, completedDate])
+}
+
+/// A period during which a habit was paused.
+///
+/// Kept as history rather than a single `pausedAt`, because streaks need it:
+/// a day inside a past pause is not a missed occurrence, and only a record of
+/// where the pause began and ended can say so after the fact. `endDate` null
+/// means the pause is still open; `Habit.status` is what pages read, this is
+/// what the streak arithmetic reads.
+model HabitPause {
+  id      String @id @default(cuid())
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  /// First paused day, inclusive.
+  startDate DateTime  @db.Date
+  /// Last paused day, inclusive. Null while the pause is open.
+  endDate   DateTime? @db.Date
+
+  @@index([habitId, startDate])
 }

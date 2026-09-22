@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { localDateToDbDate, localDateTimeToInstant } from "@/lib/datetime";
+import { getLocalToday, localDateToDbDate, localDateTimeToInstant } from "@/lib/datetime";
 import { getTodayData } from "@/lib/today/queries";
 import {
   createTestGoal,
@@ -671,13 +671,17 @@ describe("agreement with the task table", () => {
     const { setTaskCompletion } = await import("@/lib/tasks/service");
     const task = await createTestTask(user.id, {
       title: "Finish me",
-      dueDate: d(TODAY),
+      dueDate: localDateToDbDate(getLocalToday("UTC")),
       xpReward: 30,
     });
 
     await setTaskCompletion(user.id, task.id, true, "UTC");
 
-    const data = await load();
+    // The ledger row is stamped by the database clock, so this one case is
+    // read on the real current day rather than on the fixed TODAY the rest of
+    // the file uses — otherwise the XP window moves off it overnight.
+    const realToday = getLocalToday("UTC");
+    const data = await getTodayData(user.id, "UTC", realToday, realToday);
 
     expect(data.sections.completed.map((t) => t.title)).toEqual(["Finish me"]);
     expect(data.progress).toMatchObject({ total: 1, completed: 1, percent: 100 });

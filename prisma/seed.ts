@@ -627,6 +627,131 @@ async function seed(): Promise<void> {
     focusSeconds += seconds;
   }
 
+  // -- Habits ---------------------------------------------------------------
+  // The thing a habit is for is the history behind it, so each one is seeded
+  // with real completions rather than an empty schedule: a long daily run, a
+  // weekday habit with a gap in it, a times-per-week habit, one mid-pause and
+  // one archived. Completion rows carry their own ledger entries, exactly as
+  // the app writes them, so the seeded XP total still equals the ledger sum.
+  const HABITS: readonly {
+    name: string;
+    description: string;
+    status: "ACTIVE" | "PAUSED" | "ARCHIVED";
+    frequency: "DAILY" | "WEEKDAYS" | "WEEKLY";
+    weekdays?: number[];
+    weeklyTarget?: number;
+    xpReward: number;
+    startsDaysAgo: number;
+    /** Day offsets (0 = today) that were completed. */
+    done: number[];
+    /** An open or closed pause, as day offsets. */
+    pause?: { from: number; to: number | null };
+  }[] = [
+    {
+      name: "Read 20 pages",
+      description: "Anything that is not a screen.",
+      status: "ACTIVE",
+      frequency: "DAILY",
+      xpReward: 10,
+      startsDaysAgo: 60,
+      // Eleven days running, up to and including yesterday: today is still
+      // open, which is what the dashboard should be nudging about.
+      done: [-11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1],
+    },
+    {
+      name: "Morning workout",
+      description: "Thirty minutes before anything else.",
+      status: "ACTIVE",
+      frequency: "WEEKDAYS",
+      weekdays: [1, 2, 3, 4, 5],
+      xpReward: 15,
+      startsDaysAgo: 45,
+      done: [-1, -2, -3, -6, -7, -8, -9, -13, -14, -15],
+    },
+    {
+      name: "Call home",
+      description: "Twice a week, whichever days suit.",
+      status: "ACTIVE",
+      frequency: "WEEKLY",
+      weeklyTarget: 2,
+      xpReward: 20,
+      startsDaysAgo: 40,
+      done: [-2, -6, -9, -13, -16, -20],
+    },
+    {
+      name: "Learn kanji",
+      description: "Paused while exams are on.",
+      status: "PAUSED",
+      frequency: "DAILY",
+      xpReward: 10,
+      startsDaysAgo: 50,
+      done: [-12, -11, -10, -9, -8],
+      pause: { from: -7, to: null },
+    },
+    {
+      name: "Evening journal",
+      description: "Served its purpose — kept for the record.",
+      status: "ARCHIVED",
+      frequency: "DAILY",
+      xpReward: 10,
+      startsDaysAgo: 90,
+      done: [-40, -39, -38, -37, -36, -35],
+      pause: { from: -34, to: null },
+    },
+  ];
+
+  let habitCompletions = 0;
+  for (const seedHabit of HABITS) {
+    const created = await prisma.habit.create({
+      data: {
+        userId: user.id,
+        name: seedHabit.name,
+        description: seedHabit.description,
+        status: seedHabit.status,
+        frequency: seedHabit.frequency,
+        weekdays: seedHabit.weekdays ?? [],
+        weeklyTarget: seedHabit.weeklyTarget ?? null,
+        xpReward: seedHabit.xpReward,
+        startDate: dateCol(-seedHabit.startsDaysAgo),
+        endDate: null,
+        createdAt: instant(-seedHabit.startsDaysAgo, 8),
+        archivedAt: seedHabit.status === "ARCHIVED" ? instant(-34, 20) : null,
+        pauses: seedHabit.pause
+          ? {
+              create: {
+                startDate: dateCol(seedHabit.pause.from),
+                endDate: seedHabit.pause.to === null ? null : dateCol(seedHabit.pause.to),
+              },
+            }
+          : undefined,
+      },
+      select: { id: true },
+    });
+
+    for (const offset of seedHabit.done) {
+      const completedAt = instant(offset, 21);
+      const completion = await prisma.habitCompletion.create({
+        data: { habitId: created.id, completedDate: dateCol(offset), completedAt },
+        select: { id: true },
+      });
+
+      await prisma.xpTransaction.create({
+        data: {
+          userId: user.id,
+          habitCompletionId: completion.id,
+          amount: seedHabit.xpReward,
+          kind: "AWARD",
+          source: "HABIT_COMPLETION",
+          description: `Kept “${seedHabit.name}” on ${day(offset)}`,
+          createdAt: completedAt,
+        },
+      });
+
+      totalXp += seedHabit.xpReward;
+      habitCompletions += 1;
+    }
+  }
+
   // Derive the streak from the days that actually have completions, rather
   // than hard-coding a number that would contradict the seeded history.
   const sortedDays = [...completedDays].sort();
@@ -658,7 +783,10 @@ async function seed(): Promise<void> {
   console.log(`  XP        ${totalXp} — level ${calculateLevel(totalXp)}`);
   console.log(`  Streak    ${currentStreak} day${currentStreak === 1 ? "" : "s"}`);
   console.log(
-    `  Focus     ${FOCUS.length} sessions — ${Math.round(focusSeconds / 60)} min tracked\n`,
+    `  Focus     ${FOCUS.length} sessions — ${Math.round(focusSeconds / 60)} min tracked`,
+  );
+  console.log(
+    `  Habits    ${HABITS.length} (${HABITS.filter((h) => h.status === "ACTIVE").length} active) — ${habitCompletions} completions\n`,
   );
   console.log("Remove it again with: npm run db:unseed");
 }

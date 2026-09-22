@@ -241,3 +241,93 @@ export async function getFocusSession(sessionId: string) {
 export async function listFocusSessions(userId: string) {
   return db.focusSession.findMany({ where: { userId }, orderBy: { startedAt: "asc" } });
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4.4 fixtures
+// ---------------------------------------------------------------------------
+
+/** "YYYY-MM-DD" → the midnight-UTC `Date` a DATE column stores. */
+const dateColumn = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
+
+/**
+ * Writes a habit directly, bypassing the service.
+ *
+ * Dates are calendar days as strings, exactly as the app addresses them, so a
+ * test reads like the schedule it describes.
+ */
+export async function createTestHabit(
+  userId: string,
+  overrides: Partial<{
+    name: string;
+    description: string | null;
+    status: "ACTIVE" | "PAUSED" | "ARCHIVED";
+    frequency: "DAILY" | "WEEKDAYS" | "WEEKLY";
+    /** 0 = Sunday … 6 = Saturday. */
+    weekdays: number[];
+    weeklyTarget: number | null;
+    xpReward: number;
+    startDate: string;
+    endDate: string | null;
+    archivedAt: Date | null;
+  }> = {},
+) {
+  return db.habit.create({
+    data: {
+      userId,
+      name: overrides.name ?? "Test habit",
+      description: overrides.description ?? null,
+      status: overrides.status ?? "ACTIVE",
+      frequency: overrides.frequency ?? "DAILY",
+      weekdays: overrides.weekdays ?? [],
+      weeklyTarget: overrides.weeklyTarget ?? null,
+      xpReward: overrides.xpReward ?? 10,
+      startDate: dateColumn(overrides.startDate ?? "2026-09-01"),
+      endDate: overrides.endDate ? dateColumn(overrides.endDate) : null,
+      archivedAt: overrides.archivedAt ?? null,
+    },
+  });
+}
+
+/** Records a completed occurrence directly — history the service did not write. */
+export async function createTestHabitCompletion(
+  habitId: string,
+  date: string,
+  completedAt: Date = dateColumn(date),
+) {
+  return db.habitCompletion.create({
+    data: { habitId, completedDate: dateColumn(date), completedAt },
+  });
+}
+
+/** Records a paused period directly; `end` null means still paused. */
+export async function createTestHabitPause(habitId: string, start: string, end: string | null) {
+  return db.habitPause.create({
+    data: { habitId, startDate: dateColumn(start), endDate: end ? dateColumn(end) : null },
+  });
+}
+
+/** Reads a habit straight from the database, with its pause log. */
+export async function getHabit(habitId: string) {
+  return db.habit.findUniqueOrThrow({
+    where: { id: habitId },
+    include: { pauses: { orderBy: { startDate: "asc" } } },
+  });
+}
+
+/** A habit's completion days, oldest first, as "YYYY-MM-DD". */
+export async function listHabitCompletionDates(habitId: string): Promise<string[]> {
+  const rows = await db.habitCompletion.findMany({
+    where: { habitId },
+    select: { completedDate: true },
+    orderBy: { completedDate: "asc" },
+  });
+  return rows.map((row) => row.completedDate.toISOString().slice(0, 10));
+}
+
+/** Every ledger row habits wrote for a user, oldest first. */
+export async function getHabitLedgerRows(userId: string) {
+  return db.xpTransaction.findMany({
+    where: { userId, source: "HABIT_COMPLETION" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+}
