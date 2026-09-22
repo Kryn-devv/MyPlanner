@@ -58,18 +58,21 @@ adds exactly one; Phase 4.4 adds three, all of them additive.
 ## Getting started
 
 ```bash
-# 1. Install dependencies (runs `prisma generate` automatically)
-npm install
-
-# 2. Configure the environment
+# 1. Configure the environment — FIRST, before installing.
+#    `npm install` runs `prisma generate`, which resolves DATABASE_URL through
+#    prisma.config.ts, so a missing .env fails the install rather than the
+#    first database command. The database itself need not exist yet.
 cp .env.example .env
 #    Then edit .env:
 #      - point DATABASE_URL and TEST_DATABASE_URL at your PostgreSQL
 #      - set AUTH_SECRET to a random 32+ character string:
 #        node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
+# 2. Install dependencies (runs `prisma generate` automatically)
+npm install
+
 # 3. Create the schema
-npm run db:migrate
+npm run db:deploy        # or `npm run db:migrate` when developing against it
 
 # 4. (optional) Load demo data
 npm run db:seed          # signs in as demo@nova.test / demo-password
