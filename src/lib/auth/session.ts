@@ -1,9 +1,10 @@
 import "server-only";
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { shouldUseSecureCookie } from "./cookie-policy";
 
 /**
  * Opaque server-side sessions.
@@ -60,13 +61,16 @@ export async function createSession(userId: string): Promise<void> {
   });
 
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     // `lax` still sends the cookie on top-level navigation, so links into the
     // app work, while blocking cross-site POSTs — CSRF protection for the
     // Server Actions that back every mutation.
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Follows the connection rather than NODE_ENV — see cookie-policy.ts for
+    // why a production build served over plain HTTP on a LAN needs this.
+    secure: shouldUseSecureCookie(requestHeaders.get("x-forwarded-proto")),
     path: "/",
     expires: expiresAt,
   });
