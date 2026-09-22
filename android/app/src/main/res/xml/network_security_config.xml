@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A NOVA server on home Wi-Fi is plain http://<PC's IP>:3000. There is no certificate a phone
+     could check for a LAN IP, so cleartext has to be allowed for the app to work at all. For
+     https (a server hosted online) only the system's own CAs are trusted: no user-installed CA
+     can intercept it, and there is no debug override that would ship by accident. -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="InsecureBaseConfiguration">
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

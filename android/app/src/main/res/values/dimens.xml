@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Side margin of the connect and error screens; wider screens get a narrower column
+         (values-w600dp) so a line of text stays readable on a tablet. -->
+    <dimen name="screen_gutter">24dp</dimen>
+    <dimen name="control_radius">12dp</dimen>
+    <dimen name="control_height">52dp</dimen>
+</resources>

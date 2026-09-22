@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 10+ may lay a translucent scrim over the system bars for contrast. The app is
+         dark behind the bars already, and the scrim only reads as a grey stripe. -->
+    <style name="Theme.Nova" parent="Base.Theme.Nova">
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+    </style>
+</resources>

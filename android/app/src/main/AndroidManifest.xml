@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      enableOnBackInvokedCallback: on Android 13+ Back goes through OnBackInvokedDispatcher,
+      which lets the system animate "back to home" when the web page has no history left.
+      fullBackupContent covers Android 8 to 11, where dataExtractionRules does not apply; with
+      allowBackup off it is belt and braces, and it states the intent where lint looks for it.
+    -->
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Nova"
+        tools:targetApi="33">
+
+        <!--
+          The WebView keeps its page across rotation, keyboard and dark-mode changes instead of
+          being torn down and reloading, which would lose whatever was half-typed in a form.
+          The same goes for unfolding a foldable (density), the system font size and bold text
+          (fontScale, fontWeightAdjustment), language and color mode: the web page adapts to all
+          of them in place. NOVA's forms live in client-side dialogs, so a reload cannot bring
+          their text back. The small native error panel keeps its old sizes until the next
+          launch, a far smaller cost than losing a half-typed task.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection|colorMode"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!--
+          Not exported: only this app opens it. The launcher shortcut still works, because the
+          system starts a static shortcut's intent as the app that published it.
+        -->
+        <activity
+            android:name=".ConnectActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+    </application>
+</manifest>

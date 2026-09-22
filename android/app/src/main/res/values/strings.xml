@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NOVA</string>
+
+    <!-- Connect screen -->
+    <string name="connect_title">Connect to your NOVA server</string>
+    <string name="connect_explanation">Enter the address your NOVA server shows when you start it on your PC, e.g. http://192.168.1.5:3000. Your phone must be on the same Wi-Fi.</string>
+    <string name="connect_field_label">Server address</string>
+    <string name="connect_button">Connect</string>
+    <string name="connect_button_busy">Connecting…</string>
+    <string name="connect_checking">Checking %1$s…</string>
+    <string name="connect_footnote">Your account and everything in it stay on that server. This app only opens it.</string>
+
+    <!-- Connect screen: why an address was refused before any network request -->
+    <string name="address_empty">Enter the address your NOVA server shows, like http://192.168.1.5:3000.</string>
+    <string name="address_unsupported_scheme">Use an address that starts with http:// or https://.</string>
+    <string name="address_ipv6_brackets">Put an IPv6 address in square brackets, like http://[fd00::5]:3000.</string>
+    <string name="address_invalid">That doesn\'t look like a server address. Try something like http://192.168.1.5:3000.</string>
+
+    <!-- Connect screen: what the reachability check found -->
+    <string name="probe_unreachable">Couldn\'t reach %1$s. Check that the NOVA server is running on your PC and that your phone is on the same Wi-Fi.</string>
+    <string name="probe_port_hint">NOVA usually runs on port 3000, so the address may need :3000 on the end.</string>
+    <string name="probe_timed_out">%1$s didn\'t answer in time. The PC may be asleep, or Windows Firewall may be blocking Node.js on private networks.</string>
+    <string name="probe_slow">The server at %1$s answered but took too long to send its page. If you\'ve only just started it, it may still be getting ready: wait a few seconds and tap Connect again.</string>
+    <string name="probe_loopback">%1$s means this phone itself, not your PC. Use the Network address the NOVA server prints when it starts, like http://192.168.1.5:3000.</string>
+    <string name="probe_forwards_elsewhere">%1$s forwards to a different address, %2$s. If that is your NOVA server, enter it instead. If not, check the address and port.</string>
+    <string name="probe_unknown_host">Couldn\'t find %1$s. Check the spelling, or use the PC\'s IP address instead.</string>
+    <string name="probe_tls_failed">Couldn\'t make a secure connection to %1$s: this phone doesn\'t trust its certificate. For a server on your Wi-Fi, use the http:// address.</string>
+    <string name="probe_not_nova">Something answered at %1$s, but it isn\'t a NOVA server. Check the port number.</string>
+    <string name="probe_server_error">The NOVA server at %1$s answered with an error (HTTP %2$d). Check the window where it is running on your PC.</string>
+
+    <!-- Main screen: the panel shown when a page cannot load -->
+    <string name="error_title">Can\'t reach your NOVA server</string>
+    <string name="error_address">Couldn\'t load %1$s</string>
+    <string name="error_causes_heading">This usually means one of these:</string>
+    <string name="error_cause_server">Your PC is off or asleep, or the NOVA server isn\'t running on it.</string>
+    <string name="error_cause_wifi">Your phone isn\'t on the same Wi-Fi as the PC.</string>
+    <string name="error_cause_address">The PC\'s address changed. Check the Network address the server prints when it starts.</string>
+    <string name="error_retry">Retry</string>
+    <string name="error_retrying">Retrying…</string>
+    <string name="error_change_server">Change server</string>
+    <string name="error_detail_http">The server answered HTTP %1$d.</string>
+    <string name="error_detail_certificate">This phone doesn\'t trust the server\'s security certificate.</string>
+    <string name="error_detail_redirect">The server sent the app on to %1$s, which is a different address. If NOVA has moved there, tap Change server and enter it.</string>
+
+    <string name="no_app_for_link">No app on this phone can open that link.</string>
+
+    <!-- Launcher shortcut -->
+    <string name="shortcut_change_server_short">Change server</string>
+    <string name="shortcut_change_server_long">Change NOVA server</string>
+</resources>

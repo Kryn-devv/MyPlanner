@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The NOVA web app's own tokens (src/app/globals.css), so the native screens and the web
+     pages they sit beside read as one product. -->
+<resources>
+    <color name="nova_void">#FF08090B</color>
+    <color name="nova_surface">#FF101317</color>
+    <color name="nova_elevated">#FF161A20</color>
+    <color name="nova_ink">#FFE8EAEF</color>
+    <color name="nova_ink_muted">#FF9AA2B1</color>
+    <color name="nova_ink_faint">#FF6B7280</color>
+    <color name="nova_accent">#FF8B7CFF</color>
+    <color name="nova_accent_strong">#FFA89DFF</color>
+    <color name="nova_accent_dim">#FF5F52C4</color>
+    <color name="nova_accent_deep">#FF3D3387</color>
+    <color name="nova_xp_to">#FF4FD1E8</color>
+    <color name="nova_critical">#FFFB7185</color>
+    <!-- White at 12%, the web app's strong hairline. -->
+    <color name="nova_line_strong">#1FFFFFFF</color>
+    <color name="nova_ripple">#33FFFFFF</color>
+</resources>

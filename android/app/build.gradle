@@ -1,0 +1,70 @@
+plugins {
+    id "com.android.application"
+}
+
+// Release signing is read from android/keystore.properties when that file
+// exists (see keystore.properties.example for its keys). It is gitignored, as
+// is every keystore, so a signing key can never end up in the repository.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    ["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
+        if (!keystoreProperties.getProperty(key)) {
+            throw new GradleException("keystore.properties is missing \"${key}\" (see keystore.properties.example)")
+        }
+    }
+}
+
+android {
+    namespace = "app.nova.planner"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "app.nova.planner"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            release {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            debuggable = false
+            // The app is a few small classes with no libraries to strip, so R8
+            // would save next to nothing and cost readable crash traces.
+            minifyEnabled = false
+            // Without a release key the APK is still signed, with the standard
+            // debug key, so it always installs. It stays non-debuggable either
+            // way: signing and debuggability are independent.
+            signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Unit tests only: the shipped app has no runtime dependencies at all.
+    testImplementation "junit:junit:4.13.2"
+}
+
+// Name each deprecated call instead of printing a one-line "uses a deprecated API" summary;
+// the only intended ones are the pre-Android-11 inset calls, and new ones should stand out.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ["-Xlint:deprecation"]
+}

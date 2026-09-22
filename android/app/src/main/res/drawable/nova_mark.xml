@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The web app's BrandMark: the four-point sparkle, white, on the accent-to-cyan gradient
+     tile. The sparkle path is the one in src/components/layout/Sidebar.tsx. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path android:pathData="M9,0H23A9,9 0,0 1,32 9V23A9,9 0,0 1,23 32H9A9,9 0,0 1,0 23V9A9,9 0,0 1,9 0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="32"
+                android:endY="32"
+                android:startX="0"
+                android:startY="0"
+                android:type="linear">
+                <item android:color="@color/nova_accent" android:offset="0" />
+                <item android:color="@color/nova_xp_to" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <group
+        android:translateX="8"
+        android:translateY="8">
+        <path
+            android:fillAlpha="0.95"
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M8 1.5 9.7 6.3 14.5 8 9.7 9.7 8 14.5 6.3 9.7 1.5 8l4.8-1.7z" />
+    </group>
+</vector>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon for "Change server": the one way to reach the connect screen while
+     the saved server is working, since the app itself is only the web page. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_change_server"
+        android:shortcutId="change_server"
+        android:shortcutLongLabel="@string/shortcut_change_server_long"
+        android:shortcutShortLabel="@string/shortcut_change_server_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.nova.planner.ConnectActivity"
+            android:targetPackage="app.nova.planner" />
+    </shortcut>
+</shortcuts>
