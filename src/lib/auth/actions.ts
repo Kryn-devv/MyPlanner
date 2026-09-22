@@ -7,6 +7,7 @@ import { validateProfile, validateSignIn, validateSignUp } from "@/lib/validatio
 import type { FieldErrors } from "@/lib/validation/result";
 import { requireUser } from "./guard";
 import { fakeVerifyDelay, hashPassword, needsRehash, verifyPassword } from "./password";
+import { isPasswordHashCurrent } from "./password-reset";
 import { createSession, destroyAllSessions, destroySession } from "./session";
 import { createUser, EmailTakenError, ensureUserStats } from "./users";
 
@@ -22,7 +23,16 @@ export interface AuthFormState {
   readonly values?: Record<string, string>;
 }
 
+/**
+ * The arguments' types are only a promise: an action is a public endpoint, and
+ * anyone can post it a JSON array instead of a form. Without this check a
+ * non-FormData argument throws inside the validator, which Next answers with a
+ * 500 and an error in the server log for every such request.
+ */
+const MALFORMED_REQUEST: AuthFormState = { errors: { _form: "Something went wrong. Please try again." } };
+
 export async function signUpAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  if (!(formData instanceof FormData)) return MALFORMED_REQUEST;
   const result = validateSignUp(formData);
 
   // Echo back what was typed (never the password) so the form does not reset.
@@ -50,6 +60,7 @@ export async function signUpAction(_prev: AuthFormState, formData: FormData): Pr
 }
 
 export async function signInAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  if (!(formData instanceof FormData)) return MALFORMED_REQUEST;
   const result = validateSignIn(formData);
   const values = { email: String(formData.get("email") ?? "") };
 
@@ -75,16 +86,40 @@ export async function signInAction(_prev: AuthFormState, formData: FormData): Pr
       return { errors: { _form: "Incorrect email or password." }, values };
     }
 
-    // Transparently upgrade hashes created with older parameters.
+    // Every hash of the password just typed; see the check after
+    // `createSession` below.
+    const verified = [user.passwordHash];
+
+    // Transparently upgrade hashes created with older parameters. A
+    // compare-and-swap, not a plain update: if a reset changed the password
+    // since it was read above, an unconditional write would store a hash of
+    // the *old* password over the new one and undo the reset entirely.
     if (needsRehash(user.passwordHash)) {
       const upgraded = await hashPassword(password);
-      await prisma.user
-        .update({ where: { id: user.id }, data: { passwordHash: upgraded } })
-        .catch((error: unknown) => console.error("[auth] rehash failed", error));
+      const swap = await prisma.user
+        .updateMany({ where: { id: user.id, passwordHash: user.passwordHash }, data: { passwordHash: upgraded } })
+        .catch((error: unknown) => {
+          console.error("[auth] rehash failed", error);
+          return null;
+        });
+      if (swap?.count === 0) return { errors: { _form: "Incorrect email or password." }, values };
+      // A failed write may still have committed, so either hash is this
+      // password's.
+      verified.push(upgraded);
     }
 
     await ensureUserStats(user.id);
     await createSession(user.id);
+
+    // A password reset that committed while the password above was being
+    // checked has already deleted every session it could see — but not this
+    // one, created a moment later. Keep it only if the hash that was checked
+    // is still the stored one; otherwise the password typed is no longer the
+    // account's, and the sign-in fails as if it had been wrong all along.
+    if (!(await isPasswordHashCurrent(user.id, verified))) {
+      await destroySession();
+      return { errors: { _form: "Incorrect email or password." }, values };
+    }
   } catch (error) {
     console.error("[auth] sign-in failed", error);
     return { errors: { _form: "Something went wrong signing you in. Please try again." }, values };

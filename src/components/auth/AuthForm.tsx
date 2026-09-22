@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { signInAction, signUpAction, type AuthFormState } from "@/lib/auth/actions";
@@ -89,6 +90,22 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
           error={errors.password}
           hint={isSignUp ? `At least ${MIN_PASSWORD_LENGTH} characters` : undefined}
         />
+
+        {!isSignUp && (
+          // Directly under the field it rescues, where someone stuck on their
+          // password is already looking. Enter in the password field still
+          // submits, so the extra tab stop costs nobody who remembers theirs.
+          <p className="-mt-2 text-right text-[0.75rem]">
+            <Link
+              // Asserted because the generated route list only learns about new
+              // pages on the next build.
+              href={"/forgot-password" as Route}
+              className="font-medium text-accent-strong underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </p>
+        )}
 
         <Button type="submit" variant="primary" size="lg" loading={pending} className="w-full">
           {isSignUp ? "Create account" : "Sign in"}

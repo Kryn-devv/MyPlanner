@@ -1,20 +1,16 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { APP_NAME, APP_TAGLINE } from "@/config/app";
-import { getCurrentUser } from "@/lib/auth/session";
 import { BrandMark } from "@/components/layout/Sidebar";
 
 /**
  * Shell for the signed-out routes.
  *
- * Bounces an already-authenticated visitor into the app so the back button
- * cannot land them on a login form they do not need.
+ * It does not bounce signed-in visitors itself: the reset-password page must
+ * render for them, and a layout cannot tell which page it wraps. The pages
+ * that should send a signed-in visitor on to the app say so themselves.
  */
-export default async function AuthLayout({ children }: { children: ReactNode }) {
-  const user = await getCurrentUser();
-  if (user) redirect("/app");
-
+export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <main id="main" className="relative z-10 flex min-h-dvh flex-col items-center justify-center px-5 py-10">
       <Link href="/" className="mb-8 flex items-center gap-2.5 rounded">

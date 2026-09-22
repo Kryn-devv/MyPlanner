@@ -85,6 +85,73 @@ npm run dev              # http://localhost:3000
 Creating an account through the sign-up form gives you a clean workspace with a
 starter set of categories.
 
+## Forgot password & email
+
+**Forgot password?** on the sign-in page asks for an email address and sends a
+link to `/reset-password`. Choosing a new password there signs the account out
+on every device and signs you straight back in on this one. A link works
+**once**, for **30 minutes**, and only the newest one works; an account gets at
+most **three** per hour. The page answers every address identically, so it
+cannot be used to find out who has an account.
+
+How the link reaches you depends on `.env` (all optional, see `.env.example`):
+
+| Configured | What happens |
+|---|---|
+| nothing | Nothing is emailed. The link is printed in the terminal running `npm start` / `npm run dev`, inside a banner headed `EMAIL NOT SENT`, and the page tells you to look there. A request refused by the hourly limit prints a `NO RESET LINK PRINTED` notice instead. Enough for a personal install. |
+| `SMTP_URL` + `EMAIL_FROM` + `APP_URL` | Sent over SMTP — Gmail included (below). |
+| `RESEND_API_KEY` + `EMAIL_FROM` + `APP_URL` | Sent through [Resend](https://resend.com)'s HTTP API. |
+
+**Gmail:** turn on 2-Step Verification, create an App Password (Google Account
+→ Security → App passwords), then:
+
+```bash
+SMTP_URL="smtps://you%40gmail.com:abcdefghijklmnop@smtp.gmail.com:465"  # @ → %40, no spaces
+EMAIL_FROM="NOVA <you@gmail.com>"
+APP_URL="http://192.168.1.20:3000"   # the address you open the app at
+```
+
+`APP_URL` is **required** as soon as email is configured, and reset emails are
+refused (with an error in the server log) until it is set. The only other
+source for the link's address is the request's `Host` header, which whoever
+sends the request controls — trusting it would let an attacker request a reset
+for your account and have the genuine email point at their server.
+
+The same goes for a printed link, so with no email configured it points at
+`APP_URL` if set, and otherwise at `http://localhost:<port>` — never at the
+address the request claimed. On another device, open the same
+`/reset-password?token=…` path at the address you use there (or set `APP_URL`
+to your LAN address).
+
+The link lands on a route that moves the token into a short-lived cookie and
+redirects to `/reset-password/new`, so the page where the new password is typed
+never has the token in its address, its history entry or any `Referer` header.
+The page also works for someone who is still signed in, and resetting replaces
+every session with one for the link's own account.
+
+`tests/e2e/verify-password-reset.mjs` drives the whole flow in a browser. Run
+the server with no email provider and its output captured
+(`npm start > server.log 2>&1`), then
+`E2E_SERVER_LOG=./server.log node tests/e2e/verify-password-reset.mjs` — it
+reads the printed links from that file.
+
+## Android app
+
+`android/` is a small native Android app — a shell around this server, with
+no data of its own. On first launch it asks for your server's address (the
+`Network:` line that `npm start` or `npm run dev` prints, such as
+`http://192.168.1.5:3000`), checks that a NOVA server answers there, and from
+then on opens straight into your dashboard. Sign-up, sign-in and forgotten
+passwords are the same pages the browser shows.
+
+It works whenever the phone can reach the server: on the same Wi-Fi while the
+PC is on and the server is running. For the best experience serve a production
+build (`npm run build`, then `npm start`) rather than the dev server. To use it
+away from home, host the server online and enter that `https://` address
+instead — long-press the app icon and choose **Change server**.
+
+Installing, building and signing are covered in [`android/README.md`](android/README.md).
+
 ## Commands
 
 | Command | What it does |

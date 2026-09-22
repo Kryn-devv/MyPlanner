@@ -331,3 +331,89 @@ export async function getHabitLedgerRows(userId: string) {
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
 }
+
+// ---------------------------------------------------------------------------
+// Password reset fixtures
+// ---------------------------------------------------------------------------
+
+/** A sent message, as the reset flow hands it to its transport. */
+export interface CapturedEmail {
+  readonly to: string;
+  readonly subject: string;
+  readonly text: string;
+  readonly html: string;
+}
+
+/**
+ * A transport that records instead of sending.
+ *
+ * Reports itself as SMTP so the flow behaves exactly as it would with real
+ * email configured — no test ever reaches a mail server.
+ */
+export function createCapturingTransport() {
+  const sent: CapturedEmail[] = [];
+  return {
+    sent,
+    transport: {
+      kind: "smtp" as const,
+      async send(message: CapturedEmail) {
+        sent.push(message);
+      },
+    },
+  };
+}
+
+/**
+ * Stands in for Next's `after`: collects the work the request deferred, so a
+ * test can let the response "go out" first and then wait for what follows.
+ */
+export function createDeferredQueue() {
+  const pending: Promise<void>[] = [];
+  return {
+    defer: (task: () => Promise<void>) => {
+      pending.push(task());
+    },
+    /** How many tasks were handed over, flushed or not. */
+    get scheduled() {
+      return pending.length;
+    },
+    async flush(): Promise<void> {
+      await Promise.all(pending);
+    },
+  };
+}
+
+/** Pulls the raw token back out of the link in a captured email. */
+export function tokenFromEmail(message: CapturedEmail): string {
+  const match = message.text.match(/\/reset-password\?token=([A-Za-z0-9_-]+)/);
+  if (!match?.[1]) throw new Error("No reset link in the captured email");
+  return match[1];
+}
+
+/** Every reset token row a user has, oldest first. */
+export async function listResetTokens(userId: string) {
+  return db.passwordResetToken.findMany({ where: { userId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+}
+
+/**
+ * Writes a session row directly.
+ *
+ * `createSession` sets a cookie and so needs a request; the rows are all a
+ * revocation test needs to observe.
+ */
+export async function createTestSession(userId: string) {
+  counter += 1;
+  return db.session.create({
+    data: {
+      userId,
+      tokenHash: `test-session-${counter}-${Date.now()}-${Math.random()}`,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+}
+
+/** A user's stored password hash, straight from the database. */
+export async function getPasswordHash(userId: string): Promise<string> {
+  const row = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
+  return row.passwordHash;
+}

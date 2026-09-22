@@ -163,6 +163,8 @@ model User {
   habits         Habit[]
   stats          UserStats?
 
+  passwordResetTokens PasswordResetToken[]
+
   @@index([email])
 }
 
@@ -182,6 +184,34 @@ model Session {
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
+}
+
+/// A single-use link for setting a new password without the old one.
+///
+/// Like `Session`, only a keyed hash of the token is stored: the raw token
+/// exists in the emailed link and nowhere else, so read access to this table
+/// cannot be turned into a password reset.
+///
+/// Rows outlive their usefulness on purpose. A token that was superseded or
+/// expired still counts towards the hourly request limit, so it is kept until
+/// it has aged out of that window rather than deleted the moment it stops
+/// working — deleting it early would reset the limit.
+model PasswordResetToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Keyed SHA-256 of the emailed token, under a different domain prefix
+  /// from session hashes so one can never be replayed as the other.
+  tokenHash String    @unique
+  expiresAt DateTime
+  /// Set exactly once, by a compare-and-swap, when the token is redeemed.
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  /// Serves the rate limit: "tokens for this user in the last hour".
+  @@index([userId, createdAt])
   @@index([expiresAt])
 }
 
