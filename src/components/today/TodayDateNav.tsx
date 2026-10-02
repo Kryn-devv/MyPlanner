@@ -57,6 +57,7 @@ export function TodayDateNav({
           onClick={() => go(addDays(selectedDate, -1))}
           disabled={!canGoBack}
           aria-label="Previous day"
+          title="Previous day"
           className={cn(
             "inline-flex h-8 w-8 items-center justify-center rounded-l-[var(--radius-control)] transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
@@ -72,6 +73,7 @@ export function TodayDateNav({
           onClick={() => go(addDays(selectedDate, 1))}
           disabled={!canGoForward}
           aria-label="Next day"
+          title="Next day"
           className={cn(
             "inline-flex h-8 w-8 items-center justify-center rounded-r-[var(--radius-control)] border-l border-line transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",

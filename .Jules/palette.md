@@ -1,0 +1,3 @@
+## 2025-02-28 - Native Tooltips for Icon-Only Buttons
+**Learning:** While `aria-label` is great for screen readers, it provides zero context for sighted mouse users. Icon-only buttons (like small trash cans, archives, or arrows) can be ambiguous.
+**Action:** Always pair `aria-label` with a native `title` attribute for icon-only buttons so that mouse users get a helpful tooltip on hover, unless a custom tooltip component is being used.
