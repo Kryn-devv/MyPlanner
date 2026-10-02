@@ -128,11 +128,11 @@ export function ProjectHeader({
           )}
 
           {project.status === "ARCHIVED" ? (
-            <Button variant="ghost" size="icon" aria-label="Restore project" disabled={busy} onClick={() => setStatus(project, "ACTIVE")}>
+            <Button variant="ghost" size="icon" aria-label="Restore project" title="Restore project" disabled={busy} onClick={() => setStatus(project, "ACTIVE")}>
               <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
             </Button>
           ) : (
-            <Button variant="ghost" size="icon" aria-label="Archive project" disabled={busy} onClick={() => setStatus(project, "ARCHIVED")}>
+            <Button variant="ghost" size="icon" aria-label="Archive project" title="Archive project" disabled={busy} onClick={() => setStatus(project, "ARCHIVED")}>
               <Archive className="h-4 w-4" aria-hidden="true" />
             </Button>
           )}
@@ -141,6 +141,7 @@ export function ProjectHeader({
             variant="ghost"
             size="icon"
             aria-label="Delete project"
+            title="Delete project"
             onClick={() => confirmDeleteProject(project)}
           >
             <Trash2 className="h-4 w-4 text-critical/80" aria-hidden="true" />

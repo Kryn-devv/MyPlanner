@@ -105,7 +105,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
                     </p>
                   )}
                 </div>
-                <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close dialog" type="button">
+                <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close dialog" title="Close dialog" type="button">
                   <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </header>

@@ -107,6 +107,7 @@ export function GoalHeader({ goal, today }: { goal: GoalSummaryView; today: Loca
               variant="ghost"
               size="icon"
               aria-label="Restore goal"
+              title="Restore goal"
               disabled={busy}
               onClick={() => setStatus(goal, "ACTIVE")}
             >
@@ -117,6 +118,7 @@ export function GoalHeader({ goal, today }: { goal: GoalSummaryView; today: Loca
               variant="ghost"
               size="icon"
               aria-label="Archive goal"
+              title="Archive goal"
               disabled={busy}
               onClick={() => setStatus(goal, "ARCHIVED")}
             >
@@ -128,6 +130,7 @@ export function GoalHeader({ goal, today }: { goal: GoalSummaryView; today: Loca
             variant="ghost"
             size="icon"
             aria-label="Delete goal"
+            title="Delete goal"
             onClick={() => confirmDeleteGoal(goal)}
           >
             <Trash2 className="h-4 w-4 text-critical/80" aria-hidden="true" />

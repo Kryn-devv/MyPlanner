@@ -122,6 +122,7 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
                   type="button"
                   onClick={() => onDismiss(toast.id)}
                   aria-label="Dismiss notification"
+                  title="Dismiss notification"
                   className="-m-1 shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-ink"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden="true" />

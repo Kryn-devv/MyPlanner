@@ -68,6 +68,7 @@ export function CalendarToolbar({
             type="button"
             onClick={() => step(-1)}
             aria-label={`Previous ${view}`}
+            title={`Previous ${view}`}
             className="inline-flex h-8 w-8 items-center justify-center rounded-l-[var(--radius-control)] text-ink-muted transition-colors hover:bg-white/[0.05] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -76,6 +77,7 @@ export function CalendarToolbar({
             type="button"
             onClick={() => step(1)}
             aria-label={`Next ${view}`}
+            title={`Next ${view}`}
             className="inline-flex h-8 w-8 items-center justify-center rounded-r-[var(--radius-control)] border-l border-line text-ink-muted transition-colors hover:bg-white/[0.05] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
