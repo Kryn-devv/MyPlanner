@@ -1,0 +1,3 @@
+## 2023-10-27 - Focus rings in reusable components
+**Learning:** While global `:focus-visible` styles catch unstyled elements, relying on them creates an inconsistent visual experience when specific components (like icon buttons or links) use custom `focus-visible:ring-2` styles. The core `Button` component lacked the custom ring applied elsewhere.
+**Action:** Always ensure foundational interactive components (like `Button` or custom link wrappers) explicitly include the design system's preferred `focus-visible` ring classes so that keyboard users receive consistent, polished focus feedback across the entire application.
