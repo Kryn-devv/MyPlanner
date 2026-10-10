@@ -279,7 +279,7 @@ export function TaskForm({
         <button
           type="button"
           onClick={() => setXpOverride(null)}
-          className="text-[0.75rem] text-accent-strong underline-offset-4 hover:underline"
+          className="text-[0.75rem] text-accent-strong underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
         >
           Reset XP to the priority default
         </button>
